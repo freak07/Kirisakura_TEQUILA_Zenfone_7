@@ -1362,6 +1362,13 @@ config TOUCHSCREEN_SYNAPTICS_TCM
 
 source "drivers/input/touchscreen/synaptics_tcm/Kconfig"
 
+config SWEEP2SLEEP
+        tristate "Sweep to put device to sleep"
+        default y
+        help
+          Say Y here to support sweep2sleep
+
+
 source "drivers/input/touchscreen/focaltech_touch/Kconfig"
 
 source "drivers/input/touchscreen/nt36xxx/Kconfig"
