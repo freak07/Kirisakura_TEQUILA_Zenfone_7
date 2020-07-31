@@ -64,7 +64,7 @@ obj-$(CONFIG_IOMMU_SUPPORT)	+= iommu/
 obj-y				+= gpu/
 
 #Zen7 camera moto driver.
-ifeq ($(ASUS_BUILD_PROJECT),ZS670KS)
+ifdef CONFIG_MACH_ASUS_ZS670KS
 obj-y				+= msp/
 endif
 
