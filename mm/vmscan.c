@@ -62,6 +62,7 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/vmscan.h>
 
+
 struct scan_control {
 	/* How many pages shrink_list() should reclaim */
 	unsigned long nr_to_reclaim;
@@ -4216,6 +4217,7 @@ void kswapd_stop(int nid)
 		}
 	}
 }
+
 
 static int __init kswapd_init(void)
 {

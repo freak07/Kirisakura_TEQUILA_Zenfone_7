@@ -56,7 +56,7 @@ static void hub_event(struct work_struct *work);
 /* synchronize hub-port add/remove and peering operations */
 DEFINE_MUTEX(usb_port_peer_mutex);
 
-static bool skip_extended_resume_delay = 1;
+static bool skip_extended_resume_delay = 0;
 module_param(skip_extended_resume_delay, bool, 0644);
 MODULE_PARM_DESC(skip_extended_resume_delay,
 		"removes extra delay added to finish bus resume");
@@ -2167,7 +2167,7 @@ void usb_disconnect(struct usb_device **pdev)
 	 * this quiesces everything except pending urbs.
 	 */
 	usb_set_device_state(udev, USB_STATE_NOTATTACHED);
-	dev_info(&udev->dev, "USB disconnect, device number %d\n",
+	dev_info(&udev->dev, "[USB] USB disconnect, device number %d\n",
 			udev->devnum);
 
 	/*
@@ -2244,18 +2244,18 @@ static void announce_device(struct usb_device *udev)
 	u16 bcdDevice = le16_to_cpu(udev->descriptor.bcdDevice);
 
 	dev_info(&udev->dev,
-		"New USB device found, idVendor=%04x, idProduct=%04x, bcdDevice=%2x.%02x\n",
+		"[USB] New USB device found, idVendor=%04x, idProduct=%04x, bcdDevice=%2x.%02x\n",
 		le16_to_cpu(udev->descriptor.idVendor),
 		le16_to_cpu(udev->descriptor.idProduct),
 		bcdDevice >> 8, bcdDevice & 0xff);
 	dev_info(&udev->dev,
-		"New USB device strings: Mfr=%d, Product=%d, SerialNumber=%d\n",
+		"[USB] New USB device strings: Mfr=%d, Product=%d, SerialNumber=%d\n",
 		udev->descriptor.iManufacturer,
 		udev->descriptor.iProduct,
 		udev->descriptor.iSerialNumber);
-	show_string(udev, "Product", udev->product);
-	show_string(udev, "Manufacturer", udev->manufacturer);
-	show_string(udev, "SerialNumber", udev->serial);
+	show_string(udev, "[USB] Product", udev->product);
+	show_string(udev, "[USB] Manufacturer", udev->manufacturer);
+	show_string(udev, "[USB] SerialNumber", udev->serial);
 }
 #else
 static inline void announce_device(struct usb_device *udev) { }
@@ -2494,7 +2494,7 @@ int usb_new_device(struct usb_device *udev)
 	err = usb_enumerate_device(udev);	/* Read descriptors */
 	if (err < 0)
 		goto fail;
-	dev_dbg(&udev->dev, "udev %d, busnum %d, minor = %d\n",
+	dev_info(&udev->dev, "[USB] udev %d, busnum %d, minor = %d\n",
 			udev->devnum, udev->bus->busnum,
 			(((udev->bus->busnum-1) * 128) + (udev->devnum-1)));
 	/* export the usbdev device-node for libusb */
@@ -3706,7 +3706,8 @@ static int hub_suspend(struct usb_interface *intf, pm_message_t msg)
 		}
 	}
 
-	dev_dbg(&intf->dev, "%s\n", __func__);
+	if (hdev->parent)
+		dev_info(&intf->dev, "[USB_PM] %s\n", __func__);
 
 	/* stop hub_wq and related activity */
 	hub_quiesce(hub, HUB_SUSPEND);
@@ -3750,8 +3751,11 @@ static void report_wakeup_requests(struct usb_hub *hub)
 static int hub_resume(struct usb_interface *intf)
 {
 	struct usb_hub *hub = usb_get_intfdata(intf);
+	struct usb_device	*hdev = hub->hdev;
 
-	dev_dbg(&intf->dev, "%s\n", __func__);
+	if (hdev->parent)
+		dev_info(&intf->dev, "[USB_PM] %s\n", __func__);
+
 	hub_activate(hub, HUB_RESUME);
 
 	/*

@@ -237,6 +237,17 @@ struct drm_bridge_funcs {
 	 * The enable callback is optional.
 	 */
 	void (*enable)(struct drm_bridge *bridge);
+
+#ifdef ZS670KS
+	/**
+	 * @asus_dfps:
+	 *
+	 * This callback should set the correct fps commadn to bridge to config
+	 * right HW setting for ASUS panel
+	 */
+	void (*asus_dfps)(struct drm_bridge *bridge);
+#endif
+
 };
 
 /**
@@ -322,6 +333,10 @@ void drm_panel_bridge_remove(struct drm_bridge *bridge);
 struct drm_bridge *devm_drm_panel_bridge_add(struct device *dev,
 					     struct drm_panel *panel,
 					     u32 connector_type);
+#endif
+
+#ifdef ZS670KS
+void drm_bridge_asus_dfps(struct drm_bridge *bridge);
 #endif
 
 #endif

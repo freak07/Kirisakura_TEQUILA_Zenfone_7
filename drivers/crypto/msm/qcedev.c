@@ -2041,6 +2041,11 @@ static inline long qcedev_ioctl(struct file *file,
 				goto exit_free_qcedev_areq;
 			}
 
+			if (map_buf.num_fds > QCEDEV_MAX_BUFFERS) {
+				err = -EINVAL;
+				goto exit_free_qcedev_areq;
+			}
+
 			for (i = 0; i < map_buf.num_fds; i++) {
 				err = qcedev_check_and_map_buffer(handle,
 						map_buf.fd[i],
@@ -2097,10 +2102,12 @@ static inline long qcedev_ioctl(struct file *file,
 	}
 
 exit_free_qcedev_areq:
-	if (podev->platform_support.bus_scale_table != NULL &&
-		cmd != QCEDEV_IOCTL_MAP_BUF_REQ &&
-		cmd != QCEDEV_IOCTL_UNMAP_BUF_REQ)
-		qcedev_ce_high_bw_req(podev, false);
+	if (podev) {
+		if (podev->platform_support.bus_scale_table != NULL &&
+				cmd != QCEDEV_IOCTL_MAP_BUF_REQ &&
+				cmd != QCEDEV_IOCTL_UNMAP_BUF_REQ)
+			qcedev_ce_high_bw_req(podev, false);
+	}
 	kfree(qcedev_areq);
 	return err;
 }

@@ -59,6 +59,14 @@ enum usbpd_state {
 	PE_MAX_STATES,
 };
 
+enum POGO_ID {
+	NO_INSERT = 0,
+	INBOX,
+	STATION,
+	DT,
+	OTHER,
+};
+
 static const char * const usbpd_state_strings[] = {
 	"UNKNOWN",
 	"ERROR_RECOVERY",
@@ -245,7 +253,9 @@ static void *usbpd_ipc_log;
 
 #define PD_MAX_MSG_ID		7
 
+#ifndef CONFIG_ASUS_PD_CHARGER
 #define PD_MAX_DATA_OBJ		7
+#endif
 
 #define PD_SRC_CAP_EXT_DB_LEN	24
 #define PD_STATUS_DB_LEN	6
@@ -291,8 +301,10 @@ static void *usbpd_ipc_log;
 #define PD_RDO_PROG_VOLTAGE(rdo)	((rdo) >> 9 & 0x7FF)
 #define PD_RDO_PROG_CURR(rdo)		((rdo) & 0x7F)
 
+#ifndef CONFIG_ASUS_PD_CHARGER
 #define PD_SRC_PDO_TYPE(pdo)		(((pdo) >> 30) & 3)
 #define PD_SRC_PDO_TYPE_FIXED		0
+#endif
 #define PD_SRC_PDO_TYPE_BATTERY		1
 #define PD_SRC_PDO_TYPE_VARIABLE	2
 #define PD_SRC_PDO_TYPE_AUGMENTED	3
@@ -303,8 +315,10 @@ static void *usbpd_ipc_log;
 #define PD_SRC_PDO_FIXED_USB_COMM(pdo)		(((pdo) >> 26) & 1)
 #define PD_SRC_PDO_FIXED_DR_SWAP(pdo)		(((pdo) >> 25) & 1)
 #define PD_SRC_PDO_FIXED_PEAK_CURR(pdo)		(((pdo) >> 20) & 3)
+#ifndef CONFIG_ASUS_PD_CHARGER
 #define PD_SRC_PDO_FIXED_VOLTAGE(pdo)		(((pdo) >> 10) & 0x3FF)
 #define PD_SRC_PDO_FIXED_MAX_CURR(pdo)		((pdo) & 0x3FF)
+#endif
 
 #define PD_SRC_PDO_VAR_BATT_MAX_VOLT(pdo)	(((pdo) >> 20) & 0x3FF)
 #define PD_SRC_PDO_VAR_BATT_MIN_VOLT(pdo)	(((pdo) >> 10) & 0x3FF)
@@ -347,10 +361,18 @@ static void *usbpd_ipc_log;
 #define ID_HDR_PRODUCT_AMA	5
 #define ID_HDR_PRODUCT_VPD	6
 
+#ifndef CONFIG_ASUS_PD_CHARGER
 #define PD_MIN_SINK_CURRENT	900
-
 static const u32 default_src_caps[] = { 0x36019096 };	/* VSafe5V @ 1.5A */
+static int default_src_caps_size = ARRAY_SIZE(default_src_caps);
+#else
+extern int min_sink_current;
+extern const u32 default_src_caps[];
+extern int default_src_caps_size;
+#endif
 static const u32 default_snk_caps[] = { 0x2601912C };	/* VSafe5V @ 3A */
+
+#define USB_VID_ASUS	0x0B05	/* ASUS VID */
 
 struct vdm_tx {
 	u32			data[PD_MAX_DATA_OBJ];
@@ -410,6 +432,7 @@ struct usbpd {
 	struct power_supply	*bat_psy;
 	struct power_supply	*bms_psy;
 	struct notifier_block	psy_nb;
+	enum POGO_ID 		dongle_type;
 
 	int			bms_charge_full;
 	int			bat_voltage_max;
@@ -442,6 +465,7 @@ struct usbpd {
 	struct regulator	*vconn;
 	bool			vbus_enabled;
 	bool			vconn_enabled;
+	bool			vconn_is_external;
 
 	u8			tx_msgid[SOPII_MSG + 1];
 	u8			rx_msgid[SOPII_MSG + 1];
@@ -462,7 +486,10 @@ struct usbpd {
 
 	bool		has_dp;
 	u16			ss_lane_svid;
-
+#ifdef CONFIG_ASUS_PD_CHARGER
+	int			src_cap_cnt;
+	bool			asus_fix_pdo_charging;
+#endif
 	/* ext msg support */
 	bool			send_get_src_cap_ext;
 	u8			src_cap_ext_db[PD_SRC_CAP_EXT_DB_LEN];
@@ -476,7 +503,14 @@ struct usbpd {
 	u8			get_battery_status_db;
 	bool			send_get_battery_status;
 	u32			battery_sts_dobj;
+	int 			vendor_id;
 };
+
+int asus_vid = -1;
+
+#ifdef CONFIG_ASUS_PD_CHARGER
+extern int * chg_eval_src_caps_asus(int src_cap_cnt, u32 received_pdo[PD_MAX_DATA_OBJ]);
+#endif
 
 static LIST_HEAD(_usbpd);	/* useful for debugging */
 
@@ -820,17 +854,26 @@ static int pd_select_pdo(struct usbpd *pd, int pdo_pos, int uv, int ua)
 
 	type = PD_SRC_PDO_TYPE(pdo);
 	if (type == PD_SRC_PDO_TYPE_FIXED) {
+#ifdef CONFIG_ASUS_PD_CHARGER
+		curr = max_current = ua / 1000;
+#else
 		curr = max_current = PD_SRC_PDO_FIXED_MAX_CURR(pdo) * 10;
-
+#endif
 		/*
 		 * Check if the PDO has enough current, otherwise set the
 		 * Capability Mismatch flag
 		 */
+#ifndef CONFIG_ASUS_PD_CHARGER
 		if (curr < PD_MIN_SINK_CURRENT) {
 			mismatch = true;
 			max_current = PD_MIN_SINK_CURRENT;
 		}
-
+#else
+		if (curr < min_sink_current) {
+			mismatch = true;
+			max_current = min_sink_current;
+		}
+#endif
 		pd->requested_voltage =
 			PD_SRC_PDO_FIXED_VOLTAGE(pdo) * 50 * 1000;
 		pd->rdo = PD_RDO_FIXED(pdo_pos, 0, mismatch, 1, 1, curr / 10,
@@ -859,6 +902,61 @@ static int pd_select_pdo(struct usbpd *pd, int pdo_pos, int uv, int ua)
 	return 0;
 }
 
+#ifdef CONFIG_ASUS_PD_CHARGER
+static int pd_eval_src_caps_asus(struct usbpd *pd)
+{
+	union power_supply_propval val;
+	int *chg_rdo, index, cur_uv, cur_ua, i;
+	bool pps_found = false;
+	u32 first_pdo = pd->received_pdos[0];
+
+	chg_rdo = chg_eval_src_caps_asus(pd->src_cap_cnt, pd->received_pdos);
+	index = chg_rdo[0];
+	cur_uv = chg_rdo[1];
+	cur_ua = chg_rdo[2];
+
+	usbpd_info(&pd->dev, "[USB][PD] pdo-%d: uv (%d), ua (%d), selected!\n", index, cur_uv, cur_ua);
+
+	pd->peer_usb_comm = PD_SRC_PDO_FIXED_USB_COMM(first_pdo);
+	pd->peer_pr_swap = PD_SRC_PDO_FIXED_PR_SWAP(first_pdo);
+	pd->peer_dr_swap = PD_SRC_PDO_FIXED_DR_SWAP(first_pdo);
+
+	val.intval = PD_SRC_PDO_FIXED_USB_SUSP(first_pdo);
+	power_supply_set_property(pd->usb_psy,
+			POWER_SUPPLY_PROP_PD_USB_SUSPEND_SUPPORTED, &val);
+
+
+	/* Check for PPS APDOs */
+	if (pd->spec_rev == USBPD_REV_30) {
+		for (i = 1; i < PD_MAX_DATA_OBJ; i++) {
+			if ((PD_SRC_PDO_TYPE(pd->received_pdos[i]) ==
+					PD_SRC_PDO_TYPE_AUGMENTED) &&
+				!PD_APDO_PPS(pd->received_pdos[i])) {
+				pps_found = true;
+				break;
+			}
+		}
+	}
+
+	pd->asus_fix_pdo_charging = false;
+	if (!pps_found)
+		pd->asus_fix_pdo_charging = true;
+
+	val.intval = pps_found ?
+			POWER_SUPPLY_PD_PPS_ACTIVE :
+			POWER_SUPPLY_PD_ACTIVE;
+	power_supply_set_property(pd->usb_psy,
+			POWER_SUPPLY_PROP_PD_ACTIVE, &val);
+
+	/* First time connecting to a PD source and it supports USB data */
+	if (pd->peer_usb_comm && pd->current_dr == DR_UFP && !pd->pd_connected)
+		start_usb_peripheral(pd);
+
+	pd_select_pdo(pd, index + 1, cur_uv, cur_ua);
+
+	return 0;
+}
+#else
 static int pd_eval_src_caps(struct usbpd *pd)
 {
 	int i;
@@ -906,6 +1004,7 @@ static int pd_eval_src_caps(struct usbpd *pd)
 
 	return 0;
 }
+#endif
 
 static void pd_send_hard_reset(struct usbpd *pd)
 {
@@ -2140,6 +2239,7 @@ static void enter_state_src_startup(struct usbpd *pd)
 
 	if (pd->current_dr == DR_NONE) {
 		pd->current_dr = DR_DFP;
+		usbpd_info(&pd->dev, "start usb host\n");
 		start_usb_host(pd, true);
 		pd->ss_lane_svid = 0x0;
 		typec_set_data_role(pd->typec_port, TYPEC_HOST);
@@ -2245,7 +2345,7 @@ static void handle_state_src_send_capabilities(struct usbpd *pd,
 	union power_supply_propval val = {0};
 
 	ret = pd_send_msg(pd, MSG_SOURCE_CAPABILITIES, default_src_caps,
-			ARRAY_SIZE(default_src_caps), SOP_MSG);
+			default_src_caps_size, SOP_MSG);
 	if (ret) {
 		if (pd->pd_connected) {
 			usbpd_set_state(pd, PE_SEND_SOFT_RESET);
@@ -2362,10 +2462,11 @@ static void enter_state_src_ready(struct usbpd *pd)
 	 * USB Host stack was started at PE_SRC_STARTUP but if peer
 	 * doesn't support USB communication, we can turn it off
 	 */
+	/*
 	if (pd->current_dr == DR_DFP && !pd->peer_usb_comm &&
 			!pd->in_explicit_contract)
 		stop_usb_host(pd);
-
+	*/
 	pd->in_explicit_contract = true;
 
 	if (pd->vdm_tx && !pd->sm_queued)
@@ -2572,7 +2673,7 @@ static void enter_state_snk_startup(struct usbpd *pd)
 					  FRAME_FILTER_EN_HARD_RESET,
 	};
 	union power_supply_propval val = {0};
-
+	pr_info("[PD] Will set PD_ALLOWED\n");
 	if (pd->current_dr == DR_NONE || pd->current_dr == DR_UFP) {
 		pd->current_dr = DR_UFP;
 
@@ -2581,8 +2682,10 @@ static void enter_state_snk_startup(struct usbpd *pd)
 		if (!ret) {
 			usbpd_dbg(&pd->dev, "type:%d\n", val.intval);
 			if (val.intval == POWER_SUPPLY_TYPE_USB ||
-				val.intval == POWER_SUPPLY_TYPE_USB_CDP)
+				val.intval == POWER_SUPPLY_TYPE_USB_CDP) {
+				usbpd_info(&pd->dev, "start usb peripheral\n");
 				start_usb_peripheral(pd);
+			}
 		}
 		typec_set_data_role(pd->typec_port, TYPEC_DEVICE);
 	}
@@ -2652,6 +2755,10 @@ static void enter_state_snk_wait_for_capabilities(struct usbpd *pd)
 {
 	unsigned long flags;
 
+#ifdef CONFIG_ASUS_PD_CHARGER
+	pd->asus_fix_pdo_charging = false;
+#endif
+
 	spin_lock_irqsave(&pd->rx_lock, flags);
 	if (list_empty(&pd->rx_q))
 		kick_sm(pd, SINK_WAIT_CAP_TIME);
@@ -2680,8 +2787,11 @@ static void handle_state_snk_wait_for_capabilities(struct usbpd *pd,
 		memcpy(&pd->received_pdos, rx_msg->payload,
 				min_t(size_t, rx_msg->data_len,
 					sizeof(pd->received_pdos)));
+		pr_info("Get Source Cap.\n");
 		pd->src_cap_id++;
-
+#ifdef CONFIG_ASUS_PD_CHARGER
+		pd->src_cap_cnt = rx_msg->data_len / sizeof(u32);
+#endif
 		usbpd_set_state(pd, PE_SNK_EVALUATE_CAPABILITY);
 	} else if (pd->hard_reset_count < 3) {
 		usbpd_set_state(pd, PE_SNK_HARD_RESET);
@@ -2706,7 +2816,11 @@ static void enter_state_snk_evaluate_capability(struct usbpd *pd)
 	pd->hard_reset_count = 0;
 
 	/* evaluate PDOs and select one */
+#ifdef CONFIG_ASUS_PD_CHARGER
+	ret = pd_eval_src_caps_asus(pd);
+#else
 	ret = pd_eval_src_caps(pd);
+#endif
 	if (ret < 0) {
 		usbpd_err(&pd->dev, "Invalid src_caps received. Skipping request\n");
 		return;
@@ -2724,6 +2838,7 @@ static void enter_state_snk_select_capability(struct usbpd *pd)
 
 	ret = pd_send_msg(pd, MSG_REQUEST, &pd->rdo, 1, SOP_MSG);
 	if (ret) {
+		usbpd_err(&pd->dev, "Error sending Request ret=%d\n", ret);
 		usbpd_set_state(pd, PE_SEND_SOFT_RESET);
 		return;
 	}
@@ -2774,6 +2889,7 @@ static void handle_state_snk_select_capability(struct usbpd *pd,
 				pd->requested_current < val.intval) {
 				val.intval =
 					pd->requested_current * 1000;
+				pr_info("[PD] %s:PE_SNK_SELECT_CAPABILITY, set pd current max2\n", __func__);
 				power_supply_set_property(pd->usb_psy,
 				     POWER_SUPPLY_PROP_PD_CURRENT_MAX,
 				     &val);
@@ -2818,6 +2934,7 @@ static void handle_state_snk_transition_sink(struct usbpd *pd,
 
 		/* resume charging */
 		val.intval = pd->requested_current * 1000; /* mA->uA */
+		pr_info("[PD] %s:PE_SNK_TRANSITION_SINK, set pd current max3\n", __func__);
 		power_supply_set_property(pd->usb_psy,
 				POWER_SUPPLY_PROP_PD_CURRENT_MAX, &val);
 
@@ -2830,6 +2947,7 @@ static void handle_state_snk_transition_sink(struct usbpd *pd,
 
 static void enter_state_snk_ready(struct usbpd *pd)
 {
+	pr_info("[PD] will get power supply name PCA9468-mains\n");
 	pd->in_explicit_contract = true;
 
 	if (pd->vdm_tx)
@@ -2859,7 +2977,7 @@ static bool handle_ctrl_snk_ready(struct usbpd *pd, struct rx_msg *rx_msg)
 	case MSG_GET_SOURCE_CAP:
 		ret = pd_send_msg(pd, MSG_SOURCE_CAPABILITIES,
 				default_src_caps,
-				ARRAY_SIZE(default_src_caps), SOP_MSG);
+				default_src_caps_size, SOP_MSG);
 		if (ret)
 			usbpd_set_state(pd, PE_SEND_SOFT_RESET);
 		break;
@@ -2924,7 +3042,9 @@ static bool handle_data_snk_ready(struct usbpd *pd, struct rx_msg *rx_msg)
 				min_t(size_t, rx_msg->data_len,
 					sizeof(pd->received_pdos)));
 		pd->src_cap_id++;
-
+#ifdef CONFIG_ASUS_PD_CHARGER
+		pd->src_cap_cnt = rx_msg->data_len / sizeof(u32);
+#endif
 		usbpd_set_state(pd, PE_SNK_EVALUATE_CAPABILITY);
 		break;
 	case MSG_VDM:
@@ -2973,6 +3093,10 @@ static bool handle_ext_snk_ready(struct usbpd *pd, struct rx_msg *rx_msg)
 		memcpy(&pd->src_cap_ext_db, rx_msg->payload,
 			sizeof(pd->src_cap_ext_db));
 		complete(&pd->is_ready);
+
+		pd->vendor_id = pd->src_cap_ext_db[0] + pd->src_cap_ext_db[1]*256;
+		pr_err("[Ander]vendor_id = 0x%04x\n", pd->vendor_id);
+		asus_vid = pd->vendor_id;
 		break;
 	case MSG_PPS_STATUS:
 		if (rx_msg->data_len != sizeof(pd->pps_status_db)) {
@@ -3096,6 +3220,7 @@ static void handle_state_snk_ready(struct usbpd *pd, struct rx_msg *rx_msg)
 {
 	int ret;
 
+	pr_info("[PD] %s:PE_SNK_READY, will enable direct charging here\n", __func__);
 	if (rx_msg && !PD_MSG_HDR_COUNT(rx_msg->hdr) &&
 		handle_ctrl_snk_ready(pd, rx_msg)) {
 		return;
@@ -3293,6 +3418,7 @@ static void enter_state_send_soft_reset(struct usbpd *pd)
 
 	ret = pd_send_msg(pd, MSG_SOFT_RESET, NULL, 0, SOP_MSG);
 	if (ret) {
+		usbpd_err(&pd->dev, "Error sending Soft Reset, do Hard Reset ret=%d\n", ret);
 		usbpd_set_state(pd, pd->current_pr == PR_SRC ?
 				PE_SRC_HARD_RESET : PE_SNK_HARD_RESET);
 		return;
@@ -3426,9 +3552,18 @@ static void handle_disconnect(struct usbpd *pd)
 		pd_phy_close();
 		pd->pd_phy_opened = false;
 	}
-
+#ifdef CONFIG_ASUS_PD_CHARGER
+	pd->asus_fix_pdo_charging = false;
+#endif
 	pd->in_pr_swap = false;
 	pd->pd_connected = false;
+
+	pr_info("[PD] will do some direct charging settings\n");
+	/* Clear Vendor ID */
+	pd->vendor_id = 0x00;
+	asus_vid = pd->vendor_id;
+	pd->dongle_type = NO_INSERT;
+
 	pd->in_explicit_contract = false;
 	pd->hard_reset_recvd = false;
 	pd->caps_count = 0;
@@ -3455,7 +3590,9 @@ static void handle_disconnect(struct usbpd *pd)
 		pd->vbus_enabled = false;
 	}
 
+	usbpd_info(&pd->dev, "reset vdm\n");
 	reset_vdm_state(pd);
+	usbpd_info(&pd->dev, "stop usb cliet/host mode\n");
 	if (pd->current_dr == DR_UFP)
 		stop_usb_peripheral(pd);
 	else if (pd->current_dr == DR_DFP)
@@ -3502,6 +3639,14 @@ static void handle_hard_reset(struct usbpd *pd)
 	union power_supply_propval val = {0};
 
 	pd->hard_reset_recvd = false;
+
+	/* Clear Vendor ID */
+	pd->vendor_id = 0x00;
+	asus_vid = pd->vendor_id;
+
+#ifdef CONFIG_ASUS_PD_CHARGER
+	pd->asus_fix_pdo_charging = false;
+#endif
 
 	if (pd->requested_current) {
 		val.intval = pd->requested_current = 0;
@@ -3641,7 +3786,7 @@ static int usbpd_process_typec_mode(struct usbpd *pd,
 	case POWER_SUPPLY_TYPEC_SOURCE_DEFAULT:
 	case POWER_SUPPLY_TYPEC_SOURCE_MEDIUM:
 	case POWER_SUPPLY_TYPEC_SOURCE_HIGH:
-		usbpd_info(&pd->dev, "Type-C Source (%s) connected\n",
+		usbpd_info(&pd->dev, "[PD] Type-C Source (%s) connected\n",
 				src_current(typec_mode));
 
 		/* if waiting for SinkTxOk to start an AMS */
@@ -3658,7 +3803,7 @@ static int usbpd_process_typec_mode(struct usbpd *pd,
 		 * source so we can turn off VBUS, Vconn, PD PHY etc.
 		 */
 		if (pd->current_pr == PR_SRC) {
-			usbpd_info(&pd->dev, "Forcing disconnect from source mode\n");
+			usbpd_info(&pd->dev, "[PD] Forcing disconnect from source mode\n");
 			pd->current_pr = PR_NONE;
 			break;
 		}
@@ -3674,24 +3819,30 @@ static int usbpd_process_typec_mode(struct usbpd *pd,
 	/* Source states */
 	case POWER_SUPPLY_TYPEC_SINK_POWERED_CABLE:
 	case POWER_SUPPLY_TYPEC_SINK:
-		usbpd_info(&pd->dev, "Type-C Sink%s connected\n",
+		usbpd_info(&pd->dev, "[PD] Type-C Sink%s connected\n",
 				typec_mode == POWER_SUPPLY_TYPEC_SINK ?
 					"" : " (powered)");
 
 		if (pd->current_pr == PR_SRC)
 			return 0;
 
+		if (pd->current_state == PE_PRS_SRC_SNK_WAIT_SOURCE_ON ||
+				pd->current_state == PE_PRS_SRC_SNK_TRANSITION_TO_OFF) {
+			usbpd_info(&pd->dev, "[PD] Ignoring Type-C sink to prevent wrong state on PD\n");
+			return 0;
+		}
+
 		pd->current_pr = PR_SRC;
 		break;
 
 	case POWER_SUPPLY_TYPEC_SINK_DEBUG_ACCESSORY:
-		usbpd_info(&pd->dev, "Type-C Debug Accessory connected\n");
+		usbpd_info(&pd->dev, "[PD] Type-C Debug Accessory connected\n");
 		break;
 	case POWER_SUPPLY_TYPEC_SINK_AUDIO_ADAPTER:
-		usbpd_info(&pd->dev, "Type-C Analog Audio Adapter connected\n");
+		usbpd_info(&pd->dev, "[PD] Type-C Analog Audio Adapter connected\n");
 		break;
 	default:
-		usbpd_warn(&pd->dev, "Unsupported typec mode:%d\n",
+		usbpd_warn(&pd->dev, "[PD] Unsupported typec mode:%d\n",
 				typec_mode);
 		break;
 	}
@@ -3717,6 +3868,7 @@ static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
 	}
 
 	typec_mode = val.intval;
+	pr_info("[PD] %s: get property: typeC_mode:%d\n", __func__, typec_mode);
 
 	ret = power_supply_get_property(pd->usb_psy,
 			POWER_SUPPLY_PROP_PE_START, &val);
@@ -3745,7 +3897,7 @@ static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
 			pd->typec_mode = typec_mode;
 			queue_work(pd->wq, &pd->start_periph_work);
 		}
-
+		usbpd_info(&pd->dev, "PE_START = 0 typec mode: %d type:%d\n", typec_mode, val.intval);
 		return 0;
 	}
 
@@ -3757,6 +3909,7 @@ static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
 	}
 
 	pd->vbus_present = val.intval;
+	pr_info("[PD] %s: get property: vbus present:%d\n", __func__, pd->vbus_present);
 
 	/*
 	 * For sink hard reset, state machine needs to know when VBUS changes
@@ -3778,13 +3931,16 @@ static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
 		return 0;
 	}
 
-	if (pd->typec_mode == typec_mode)
+	if (pd->typec_mode == typec_mode) {
+		usbpd_info(&pd->dev, "waive typec mode:%d present:%d orientation:%d\n",
+			typec_mode, pd->vbus_present, usbpd_get_plug_orientation(pd));
 		return 0;
+	}
 
 	pd->typec_mode = typec_mode;
 
-	usbpd_dbg(&pd->dev, "typec mode:%d present:%d orientation:%d\n",
-			typec_mode, pd->vbus_present,
+	usbpd_info(&pd->dev, "[PD] %s: typec mode:%s present:%d orientation:%d\n", __func__,
+			src_current(typec_mode), pd->vbus_present,
 			usbpd_get_plug_orientation(pd));
 
 	ret = usbpd_process_typec_mode(pd, typec_mode);
@@ -3977,7 +4133,7 @@ static int usbpd_uevent(struct device *dev, struct kobj_uevent_env *env)
 		add_uevent_var(env, "SELECTED_PDO=%d", pd->selected_pdo);
 	} else {
 		add_uevent_var(env, "POWER_ROLE=source");
-		for (i = 0; i < ARRAY_SIZE(default_src_caps); i++)
+		for (i = 0; i < default_src_caps_size; i++)
 			add_uevent_var(env, "PDO%d=%08x", i,
 					default_src_caps[i]);
 	}
@@ -4187,7 +4343,14 @@ static ssize_t select_pdo_store(struct device *dev,
 	int src_cap_id;
 	int pdo, uv = 0, ua = 0;
 	int ret;
+	u8 type;
 
+#ifdef CONFIG_ASUS_PD_CHARGER
+	if (pd->asus_fix_pdo_charging == true) {
+		usbpd_info(&pd->dev, "don't select pdo when only have fix pdo\n");
+		return size;
+	}
+#endif
 	mutex_lock(&pd->swap_lock);
 
 	/* Only allowed if we are already in explicit sink contract */
@@ -4217,6 +4380,13 @@ static ssize_t select_pdo_store(struct device *dev,
 		goto out;
 	}
 
+	type = PD_SRC_PDO_TYPE(pd->received_pdos[pdo - 1]);
+	if (type == PD_SRC_PDO_TYPE_FIXED) {
+		uv = PD_SRC_PDO_FIXED_VOLTAGE(pd->received_pdos[pdo - 1]) * 50 * 1000;
+		ua = PD_SRC_PDO_FIXED_MAX_CURR(pd->received_pdos[pdo - 1]) * 10 * 1000;
+	}
+
+	usbpd_info(&pd->dev, "select pdo %d uv %d ua %d type %d\n", pdo, uv, ua, type);
 	ret = pd_select_pdo(pd, pdo, uv, ua);
 	if (ret)
 		goto out;
@@ -4822,6 +4992,15 @@ void usbpd_destroy(struct usbpd *pd)
 	device_unregister(&pd->dev);
 }
 EXPORT_SYMBOL(usbpd_destroy);
+
+bool PE_check_asus_vid(void) {
+	pr_info("%s: asus_vid = 0x%04x\n", __func__, asus_vid);
+	if(asus_vid==2821)
+		return true;
+	else
+		return false;
+}
+EXPORT_SYMBOL(PE_check_asus_vid);
 
 static int __init usbpd_init(void)
 {

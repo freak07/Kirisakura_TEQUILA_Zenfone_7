@@ -53,6 +53,14 @@ static struct thermal_governor *def_governor;
 
 static struct workqueue_struct *thermal_passive_wq;
 
+#ifdef ZS670KS
+int G_virtual_therm_temp = 0;
+int G_virtual_therm_temp_prev = 25000;
+int G_ambient_therm_temp = 0;
+int G_skin_msm_therm_temp = 0;
+int G_pa_therm2_temp = 0;
+#endif
+
 /*
  * Governor section: set of functions to handle thermal governors
  *
@@ -444,6 +452,19 @@ static void store_temperature(struct thermal_zone_device *tz, int temp)
 	tz->last_temperature = tz->temperature;
 	tz->temperature = temp;
 	mutex_unlock(&tz->lock);
+
+#ifdef ZS670KS
+	if (tz->id==56) /* modem-ambient-usr therm */
+		G_ambient_therm_temp = temp;
+
+	if (tz->id==87) /* skin-msm-therm */
+		G_skin_msm_therm_temp = temp;
+
+
+	if (tz->id==49) {/* modem-lte-sub6-pa2 */
+		G_pa_therm2_temp = temp;
+	}
+#endif
 
 	trace_thermal_temperature(tz);
 	if (tz->last_temperature == THERMAL_TEMP_INVALID ||

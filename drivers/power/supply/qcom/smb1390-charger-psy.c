@@ -70,8 +70,12 @@
 #define TEMP_BUFFER_OUTPUT_BIT		BIT(7)
 
 #define CORE_FTRIM_LVL_REG		0x1033
+#define CFG_INPUT_OV_LVL_BIT		BIT(6)
 #define CFG_WIN_HI_MASK			GENMASK(3, 2)
 #define WIN_OV_LVL_1000MV		0x08
+#define WIN_OV_LVL_800MV		0x04
+#define WIN_OV_LVL_600MV		0x0
+#define CFG_WIN_LO_MASK			GENMASK(1, 0)
 
 #define CORE_FTRIM_MISC_REG		0x1034
 #define TR_WIN_1P5X_BIT			BIT(0)
@@ -101,6 +105,7 @@
 #define CC_MODE_VOTER		"CC_MODE_VOTER"
 #define MAIN_DISABLE_VOTER	"MAIN_DISABLE_VOTER"
 #define TAPER_MAIN_ICL_LIMIT_VOTER	"TAPER_MAIN_ICL_LIMIT_VOTER"
+#define ASUS_ICL_CHANGE_VOTER		"ASUS_ICL_CHANGE_VOTER"
 
 #define CP_MASTER		0
 #define CP_SLAVE		1
@@ -110,6 +115,10 @@
 #define CC_MODE_TAPER_DELTA_UA		200000
 #define DEFAULT_TAPER_DELTA_UA		100000
 #define CC_MODE_TAPER_MAIN_ICL_UA	500000
+#define ILIM_2000MA			2000000
+#define ILIM_2200MA			2200000
+#define ILIM_2400MA			2400000
+
 
 #define smb1390_dbg(chip, reason, fmt, ...)				\
 	do {								\
@@ -268,6 +277,8 @@ struct smb_irq {
 
 static const struct smb_irq smb_irqs[];
 
+struct smb1390 *chip_dev = NULL;
+
 static int smb1390_read(struct smb1390 *chip, int reg, int *val)
 {
 	int rc;
@@ -401,6 +412,56 @@ static bool smb1390_is_adapter_cc_mode(struct smb1390 *chip)
 	return pval.intval;
 }
 
+int asus_read_smb1390_ISNS(void)
+{
+	int rc;
+	union power_supply_propval pval = {0, };
+
+	if (!chip_dev->cp_master_psy) {
+		chip_dev->cp_master_psy = power_supply_get_by_name("charge_pump_master");
+		if (!chip_dev->cp_master_psy)
+			goto finish;
+	}
+
+	rc = power_supply_get_property(chip_dev->cp_master_psy,
+				POWER_SUPPLY_PROP_CP_ISNS,
+				&pval);
+	if (rc < 0) {
+		pr_err("Couldn't get CP_ISNS status rc=%d\n", rc);
+		goto finish;
+	}
+	
+	return pval.intval;
+	
+finish:
+	return 0;
+}
+
+int asus_read_smb1390_cp_enable(void)
+{
+	int rc;
+	union power_supply_propval pval = {0, };
+
+	if (!chip_dev->cp_master_psy) {
+		chip_dev->cp_master_psy = power_supply_get_by_name("charge_pump_master");
+		if (!chip_dev->cp_master_psy)
+			goto finish;
+	}
+
+	rc = power_supply_get_property(chip_dev->cp_master_psy,
+				POWER_SUPPLY_PROP_CP_ENABLE,
+				&pval);
+	if (rc < 0) {
+		pr_err("Couldn't get CP_ENABLE status rc=%d\n", rc);
+		goto finish;
+	}
+	
+	return pval.intval;
+	
+finish:
+	return 0;
+}
+
 static bool is_cps_available(struct smb1390 *chip)
 {
 	if (!chip->cps_psy)
@@ -428,12 +489,13 @@ static void cp_toggle_switcher(struct smb1390 *chip)
 	if (rc < 0)
 		pr_err("Couldn't disable ILIM rc=%d\n", rc);
 
-	vote(chip->disable_votable, SWITCHER_TOGGLE_VOTER, true, 0);
+	pr_err("[BAT][CHG]temp remove enable/disable SWITCHER_TOGGLE_VOTER\n");
+	//vote(chip->disable_votable, SWITCHER_TOGGLE_VOTER, true, 0);
 
 	/* Delay for toggling switcher */
-	usleep_range(20, 30);
+	//usleep_range(20, 30);
 
-	vote(chip->disable_votable, SWITCHER_TOGGLE_VOTER, false, 0);
+	//vote(chip->disable_votable, SWITCHER_TOGGLE_VOTER, false, 0);
 
 	rc = regmap_update_bits(chip->regmap, CORE_FTRIM_DIS_REG,
 			TR_DIS_ILIM_DET_BIT, 0);
@@ -864,6 +926,7 @@ static int smb1390_disable_vote_cb(struct votable *votable, void *data,
 		vote(chip->slave_disable_votable, MAIN_DISABLE_VOTER,
 					disable ? true : false, 0);
 
+	pr_err("[BAT][CHG]client:%s disable=%d smb1390\n", client, disable);
 	rc = smb1390_masked_write(chip, CORE_CONTROL1_REG, CMD_EN_SWITCHER_BIT,
 				  disable ? 0 : CMD_EN_SWITCHER_BIT);
 	if (rc < 0) {
@@ -946,7 +1009,7 @@ static int smb1390_ilim_vote_cb(struct votable *votable, void *data,
 				MAX_ILIM_DUAL_CP_UA : MAX_ILIM_UA));
 	/* ILIM less than min_ilim_ua, disable charging */
 	if (ilim_uA < chip->min_ilim_ua) {
-		smb1390_dbg(chip, PR_INFO, "ILIM %duA is too low to allow charging\n",
+		pr_err("ILIM %duA is too low to allow charging\n",
 			ilim_uA);
 		vote(chip->disable_votable, ILIM_VOTER, true, 0);
 	} else {
@@ -979,8 +1042,8 @@ static int smb1390_ilim_vote_cb(struct votable *votable, void *data,
 			return rc;
 		}
 
-		smb1390_dbg(chip, PR_INFO, "ILIM set to %duA slave_enabled = %d\n",
-						ilim_uA, slave_enabled);
+		smb1390_dbg(chip, PR_INFO, "client:%s ILIM set to %duA slave_enabled = %d\n",
+						client, ilim_uA, slave_enabled);
 		vote(chip->disable_votable, ILIM_VOTER, false, 0);
 	}
 
@@ -1058,9 +1121,9 @@ static void smb1390_configure_ilim(struct smb1390 *chip, int mode)
 				POWER_SUPPLY_PROP_PD_CURRENT_MAX, &pval);
 		if (rc < 0)
 			pr_err("Couldn't get PD CURRENT MAX rc=%d\n", rc);
-		else
-			vote(chip->ilim_votable, ICL_VOTER,
-					true, ILIM_FACTOR(pval.intval));
+//		else
+//			vote(chip->ilim_votable, ICL_VOTER,
+//					true, ILIM_FACTOR(pval.intval));
 	}
 
 	/* QC3.0/Wireless adapter rely on the settled AICL for USBMID_USBMID */
@@ -1209,6 +1272,7 @@ out:
 	chip->status_change_running = false;
 }
 
+#if 0
 static int smb1390_validate_slave_chg_taper(struct smb1390 *chip, int fcc_uA)
 {
 	int rc = 0;
@@ -1239,6 +1303,7 @@ static int smb1390_validate_slave_chg_taper(struct smb1390 *chip, int fcc_uA)
 
 	return rc;
 }
+#endif
 
 static void smb1390_taper_work(struct work_struct *work)
 {
@@ -1285,14 +1350,15 @@ static void smb1390_taper_work(struct work_struct *work)
 								- delta_fcc_uA;
 			smb1390_dbg(chip, PR_INFO, "taper work reducing FCC to %duA\n",
 				fcc_uA);
-			vote(chip->fcc_votable, CP_VOTER, true, fcc_uA);
+//keep asus jeta FCC config,avoid taper charger reduce FCC
+			/*vote(chip->fcc_votable, CP_VOTER, true, fcc_uA);
 			rc = smb1390_validate_slave_chg_taper(chip, (fcc_uA -
 							      main_fcc_ua));
 			if (rc < 0) {
 				pr_err("Couldn't Disable slave in Taper, rc=%d\n",
 				       rc);
 				goto out;
-			}
+			}*/
 
 			if ((fcc_uA - main_fcc_ua) < (chip->min_ilim_ua * 2)) {
 				vote(chip->disable_votable, TAPER_END_VOTER,
@@ -1516,6 +1582,9 @@ static int smb1390_set_prop(struct power_supply *psy,
 			vote_override(chip->ilim_votable, CC_MODE_VOTER,
 					(val->intval > 0), val->intval);
 		break;
+	case POWER_SUPPLY_PROP_MIN_ICL:
+		chip->min_ilim_ua = val->intval;
+		break;
 	default:
 		smb1390_dbg(chip, PR_MISC, "charge pump power supply set prop %d not supported\n",
 			prop);
@@ -1535,6 +1604,7 @@ static int smb1390_prop_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_MAX:
 	case POWER_SUPPLY_PROP_CURRENT_CAPABILITY:
 	case POWER_SUPPLY_PROP_CP_ILIM:
+	case POWER_SUPPLY_PROP_MIN_ICL:
 		return 1;
 	default:
 		break;
@@ -1684,7 +1754,7 @@ static void smb1390_destroy_votables(struct smb1390 *chip)
 
 static int smb1390_init_hw(struct smb1390 *chip)
 {
-	int rc = 0, val;
+	int rc = 0, val, status;
 
 	/*
 	 * Improve ILIM accuracy:
@@ -1722,13 +1792,15 @@ static int smb1390_init_hw(struct smb1390 *chip)
 		pr_err("Failed to write CORE_FTRIM_CTRL_REG rc=%d\n", rc);
 		return rc;
 	}
-
+	rc = smb1390_read(chip, CORE_FTRIM_CTRL_REG, &status);
+	pr_err("[smb1390]read CORE_FTRIM_CTRL_REG status=%d\n", status);
 	/* Configure IREV threshold to 200mA */
 	rc = smb1390_masked_write(chip, CORE_FTRIM_MISC_REG, TR_IREV_BIT, 0);
 	if (rc < 0) {
 		pr_err("Couldn't configure IREV threshold rc=%d\n", rc);
 		return rc;
 	}
+
 	/*
 	 * If the slave charger has registered, configure Master SMB1390 for
 	 * triple-chg config, else configure for dual. Later, if the slave
@@ -2036,6 +2108,65 @@ static int smb1390_init_cps_psy(struct smb1390 *chip)
 	return 0;
 }
 
+void asus_charger_smb1390_setting(void)
+{
+	int rc,status;
+//1. CFG_ILIM = 2.4A  
+	pr_err("asus_charger_smb1390_setting\n");
+	vote(chip_dev->ilim_votable, ASUS_ICL_CHANGE_VOTER, true, ILIM_2400MA);
+
+//2.CFG_INPUT_OV_LVL = 12V, 0x1033 bit[6]=0x1
+	rc = smb1390_masked_write(chip_dev, CORE_FTRIM_LVL_REG,
+			CFG_INPUT_OV_LVL_BIT, 0x01);
+	if (rc < 0){
+		pr_err("Couldn't set CFG_INPUT_OV_LVL to 12V\n");
+	}
+
+//3.CFG_WIN_HI = 600MV,0x1033[3:2]=0x0
+	rc = smb1390_masked_write(chip_dev, CORE_FTRIM_LVL_REG,
+			CFG_WIN_HI_MASK, WIN_OV_LVL_600MV);
+	if (rc < 0){
+		pr_err("Couldn't set CFG_WIN_HI to 800MV\n");
+	}
+
+//4.CFG_WIN_LO = 0MV
+	rc = smb1390_masked_write(chip_dev, CORE_FTRIM_LVL_REG,
+			CFG_WIN_LO_MASK, 0x0);
+	if (rc < 0){
+		pr_err("Couldn't set CFG_WIN_LO to 0MV\n");
+	}
+//5. Input Maximum Voltage = 11V
+//6.QC4 Thermal balance = 4 ̊C < SMB1390_TEMP -PM8150B_TEMP < 20 ̊C
+//7.QC3 Thermal balance = -8 ̊C < SMB1390_TEMP -PM8150B_TEMP < 40 ̊C
+//8.MIN_ICL = 1.4A, add in dtsi qcom,min-ilim-ua = <1400000>
+
+//9. Die thermal setting,add prop
+//10. SMB1390 DIE thermal maximum 0x1031 = 00 (115C),add in dtsi qcom,max-temp-alarm-degc = <115>
+	rc = smb1390_masked_write(chip_dev, CORE_FTRIM_CTRL_REG,
+			TEMP_ALERT_LVL_MASK, 0x00 << TEMP_ALERT_LVL_SHIFT);
+	if (rc < 0) {
+		pr_err("Failed to write CORE_FTRIM_CTRL_REG rc=%d\n", rc);
+	}
+	rc = smb1390_read(chip_dev, CORE_FTRIM_CTRL_REG, &status);
+	//pr_err("[smb1390]read CORE_FTRIM_CTRL_REG status=%d\n", status);
+}
+EXPORT_SYMBOL(asus_charger_smb1390_setting);
+
+void asus_charger_set_smb1390_min_ilim_ua(u32 min_ilim_ua)
+{
+	union power_supply_propval pval = {0, };
+	int rc;
+	if(chip_dev)
+	{
+		chip_dev->min_ilim_ua = min_ilim_ua;
+		pval.intval = chip_dev->min_ilim_ua;
+		rc = power_supply_set_property(chip_dev->cp_master_psy,POWER_SUPPLY_PROP_MIN_ICL,&pval);
+		if (rc < 0)
+			pr_err("Couldn't set POWER_SUPPLY_PROP_MIN_ICL rc=%d\n",rc);
+	}
+}
+EXPORT_SYMBOL(asus_charger_set_smb1390_min_ilim_ua);
+
 static int smb1390_slave_probe(struct smb1390 *chip)
 {
 	int stat, rc;
@@ -2085,7 +2216,7 @@ static int smb1390_probe(struct platform_device *pdev)
 		pr_err("Couldn't get regmap\n");
 		return -EINVAL;
 	}
-
+	chip_dev = chip;
 	platform_set_drvdata(pdev, chip);
 	chip->cp_role = (int)of_device_get_match_data(chip->dev);
 	switch (chip->cp_role) {

@@ -1586,6 +1586,7 @@ static int hid_suspend(struct usb_interface *intf, pm_message_t message)
 		goto failed;
 	}
 	dev_dbg(&intf->dev, "suspend\n");
+	printk("[USB_PM] hid_suspend, dev=%s\n", dev_name(&intf->dev));
 	return status;
 
  failed:
@@ -1600,6 +1601,7 @@ static int hid_resume(struct usb_interface *intf)
 
 	status = hid_resume_common(hid, true);
 	dev_dbg(&intf->dev, "resume status %d\n", status);
+	printk("[USB_PM] hid_resume, dev=%s\n", dev_name(&intf->dev));
 	return 0;
 }
 

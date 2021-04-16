@@ -79,6 +79,9 @@ enum print_reason {
 #define DCIN_AICL_VOTER			"DCIN_AICL_VOTER"
 #define WLS_PL_CHARGING_VOTER		"WLS_PL_CHARGING_VOTER"
 #define ICL_CHANGE_VOTER		"ICL_CHANGE_VOTER"
+#define ASUS_DISABLE_CP_VOTER		"ASUS_DISABLE_CP_VOTER"
+#define ASUS_DISABLE_CHARGER_VOTER		"ASUS_DISABLE_CHARGER_VOTER"
+#define ASUS_ICL_CHANGE_VOTER		"ASUS_ICL_CHANGE_VOTER"
 #define OVERHEAT_LIMIT_VOTER		"OVERHEAT_LIMIT_VOTER"
 #define TYPEC_SWAP_VOTER		"TYPEC_SWAP_VOTER"
 
@@ -103,6 +106,24 @@ enum print_reason {
 #define DCIN_ICL_MAX_UA			1500000
 #define DCIN_ICL_STEP_UA		100000
 #define ROLE_REVERSAL_DELAY_MS		500
+
+//[+++]ASUS : Add asus define
+#define ASUS_ICL_VOTER "ASUS_ICL_VOTER"
+#define ASUS_SLOWCHG_VOTER "ASUS_SLOWCHG_VOTER"
+#define ASUS_INOV_ICL_VOTER "ASUS_INOV_ICL_VOTER"
+#define ASUS_SLOW_FCC_VOTER "ASUS_SLOW_FCC_VOTER"
+#define CHARGER_TAG "[BAT][CHG]"
+#define ERROR_TAG "[ERR]"
+#define AUTO_TAG "[AUTO]"
+#define CHG_DBG(fmt, ...) printk(KERN_INFO CHARGER_TAG " %s: " fmt, __func__, ##__VA_ARGS__)
+#define CHG_DBG_E(fmt, ...)  printk(KERN_ERR CHARGER_TAG ERROR_TAG " %s: " fmt, __func__, ##__VA_ARGS__)
+#define CHG_DBG_AT(fmt, ...)  printk(KERN_WARNING CHARGER_TAG AUTO_TAG " %s: " fmt, __func__, ##__VA_ARGS__)
+#define THERMAL_ALERT_NONE	0
+#define THERMAL_ALERT_NO_AC	1
+#define THERMAL_ALERT_WITH_AC	2
+#define THERMAL_ALERT_CYCLE	60000
+#define ADF_PATH "/ADF/ADF"
+//[---]ASUS : Add asus define
 
 enum smb_mode {
 	PARALLEL_MASTER = 0,
@@ -261,6 +282,10 @@ static const unsigned int smblib_extcon_cable[] = {
 	EXTCON_NONE,
 };
 
+static const unsigned int asus_extcon_cable[] = {
+	EXTCON_NONE,
+};
+
 enum lpd_reason {
 	LPD_NONE,
 	LPD_MOISTURE_DETECTED,
@@ -370,6 +395,8 @@ struct smb_iio {
 	struct iio_channel	*die_temp_chan;
 	struct iio_channel	*skin_temp_chan;
 	struct iio_channel	*smb_temp_chan;
+	struct iio_channel	*asus_adapter_vadc_chan;
+	struct iio_channel	*asus_wp_temp_vadc_chan;
 };
 
 struct smb_charger {
@@ -475,6 +502,30 @@ struct smb_charger {
 	struct alarm		moisture_protection_alarm;
 	struct alarm		chg_termination_alarm;
 	struct alarm		dcin_aicl_alarm;
+
+	/* asus work */
+	struct delayed_work	asus_chg_flow_work;
+	struct delayed_work	asus_adapter_adc_work;
+	struct delayed_work	asus_min_monitor_work;
+	struct delayed_work	asus_batt_RTC_work;
+	struct delayed_work	asus_set_flow_flag_work;
+	struct delayed_work	asus_usb_thermal_work;
+	struct delayed_work	asus_usb_water_work;
+	struct delayed_work	asus_reverse_charge_work;
+	struct delayed_work	asus_cable_capability_check_work;
+	struct delayed_work	asus_reverse_charge_check_camera;
+	struct delayed_work	asus_enable_inov_work;
+	struct delayed_work	read_vendor_id_work;
+	struct delayed_work	asus_jeta_cc1_work;
+#ifdef ZS670KS
+	struct delayed_work	asus_panel_check_work;
+	struct delayed_work  asus_hvdcp3_setting_work;
+	struct delayed_work  asus_hvdcp3_18W_workaround_work;
+	struct delayed_work	asus_jeta_cc2_work;
+#endif
+
+	/* asus variables */
+	bool asus_print_usb_src_change;  //Trim the log of usb_source_change_irq
 
 	struct timer_list	apsd_timer;
 
@@ -593,6 +644,14 @@ struct smb_charger {
 	/* extcon for VBUS / ID notification to USB for uUSB */
 	struct extcon_dev	*extcon;
 
+	/* asus extcon */
+	struct extcon_dev	*thermal_extcon;
+	struct extcon_dev	*water_extcon;
+	struct extcon_dev	*quickchg_extcon;
+	struct extcon_dev	*reversechg_extcon;
+	struct extcon_dev	*invalid_audiodongle_extcon;
+	struct extcon_dev	*pmsp_extcon;
+
 	/* battery profile */
 	int			batt_profile_fcc_ua;
 	int			batt_profile_fv_uv;
@@ -615,6 +674,19 @@ struct smb_charger {
 	int			dcin_uv_count;
 	ktime_t			dcin_uv_last_time;
 	int			last_wls_vout;
+};
+
+//[+++]ASUS : Add gpio control struct
+struct gpio_control {
+	u32 ADC_SW_EN;		//soc_101, init L
+	u32 ADCPWREN_PMI_GP1;	//soc_120, init L
+};
+//[---]ASUS : Add gpio control struct
+
+enum QC_BATT_STATUS {
+	NORMAL = 0,
+	QC,
+	QC_PLUS,
 };
 
 int smblib_read(struct smb_charger *chg, u16 addr, u8 *val);
@@ -839,4 +911,11 @@ int smblib_get_qc3_main_icl_offset(struct smb_charger *chg, int *offset_ua);
 
 int smblib_init(struct smb_charger *chg);
 int smblib_deinit(struct smb_charger *chg);
+#ifdef ZS670KS
+int ADF_check_status(void);
+void jeita_rule(void);
+void CHG_TYPE_judge(void);
+int smblib_get_prop_batt_asus_status(struct smb_charger *chg,
+				union power_supply_propval *val);
+#endif
 #endif /* __SMB5_CHARGER_H */
