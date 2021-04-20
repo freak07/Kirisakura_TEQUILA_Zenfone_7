@@ -7591,7 +7591,7 @@ static void fg_gen4_cleanup(struct fg_gen4_chip *chip)
 }
 
 //ASUS_BSP battery safety upgrade +++
-int get_battery_total_time()
+int get_battery_total_time(void)
 {
 	return g_cycle_count_data.battery_total_time;
 }
