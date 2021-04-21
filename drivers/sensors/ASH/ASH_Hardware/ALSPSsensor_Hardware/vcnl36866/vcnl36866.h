@@ -250,7 +250,7 @@ struct vcnl36866_dynamic {
 };
 static int ALS_dynamic_status = 0;
 
-#ifdef ZS670KS_PROJECT
+#ifdef CONFIG_MACH_ASUS_ZS670KS
 static struct vcnl36866_dynamic vcnl36866_dynamic_array[] = {
 	{.IT_TIME = VCNL36866_CS_IT_100MS, .sensitivity = 4, .evt_skip_time_ns = 0},
 	{.IT_TIME = VCNL36866_CS_IT_400MS, .sensitivity = 1, .evt_skip_time_ns = 500000000},

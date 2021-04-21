@@ -131,7 +131,7 @@ extern bool g_is_country_code_EU;
 extern bool g_is_country_code_RU;
 #endif //ASUS_ZS661KS_PROJECT
 
-#ifdef ZS670KS
+#ifdef CONFIG_MACH_ASUS_ZS670KS
 extern bool g_is_country_code_EU;
 extern bool g_is_country_code_RU;
 extern uint8_t eeprom_camera_specs;
@@ -184,7 +184,7 @@ getname_flags(const char __user *filename, int flags, int *empty)
     }
 #endif //ASUS_ZS661KS_PROJECT
 
-#ifdef ZS670KS
+#ifdef CONFIG_MACH_ASUS_ZS670KS
 	if (!strncmp(kname, "/vendor/build.prop", 18)) {
 
 		if (g_is_country_code_EU){

@@ -34,7 +34,7 @@
 #define SMEM_IMAGE_VERSION_OEM_OFFSET 95
 #define SMEM_IMAGE_VERSION_PARTITION_APPS 10
 //ASUS_BSP Eason: check high/low level camera device+++
-#ifdef ZS670KS_PROJECT
+#ifdef CONFIG_MACH_ASUS_ZS670KS
 	extern uint8_t eeprom_camera_specs;
 #endif
 //ASUS_BSP Eason: check high/low level camera device---
@@ -129,7 +129,7 @@ const char *hw_platform_subtype[] = {
 * High level camera 0x6B => 107
 * Low  level camera 0x71 => 113
 */
-#ifdef ZS670KS_PROJECT
+#ifdef CONFIG_MACH_ASUS_ZS670KS
 enum {
 	PLATFORM_SUBTYPE_CAM_H = 0x6B,
 	PLATFORM_SUBTYPE_CAM_L = 0x71,
@@ -780,7 +780,7 @@ msm_get_platform_subtype(struct device *dev,
 			hw_subtype = PLATFORM_SUBTYPE_INVALID;
 		}
 //ASUS_BSP Eason: check high/low level camera device +++		
-#ifdef ZS670KS_PROJECT
+#ifdef CONFIG_MACH_ASUS_ZS670KS
 		if( PLATFORM_SUBTYPE_CAM_H == eeprom_camera_specs){
 				hw_subtype = PLATFORM_SUBTYPE_CAM_H;
 		}else{
