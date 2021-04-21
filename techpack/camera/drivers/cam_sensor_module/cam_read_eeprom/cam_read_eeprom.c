@@ -265,7 +265,7 @@ static void __exit cam_read_eeprom_exit()
 	remove_proc_entry("fortune",proc_dir);
 }
 
-late_initcall(cam_read_eeprom_init);
+device_initcall(cam_read_eeprom_init);
 module_exit(cam_read_eeprom_exit);
 
 MODULE_LICENSE("GPL v2");
