@@ -13,7 +13,7 @@
 #define	PROC_VCM_VALUE	"driver/vcm"
 #define	PROC_DSI_CHECK	"driver/cam_csi_check"  //ASUS_BSP Bryant "Add for camera csi debug"
 #define	PROC_CCI_CHECK	"driver/cam_cci_check"  //ASUS_BSP Jason "Add for camera cci debug"
-#ifdef CONFIG_MACH_ASUS_ZS670KS
+#if defined(ASUS_DXO) ||defined(ZS670KS)
 #define VCM_NUMBER 9 //ASUS_BSP for jason_yeh support multi camera vcm
 static uint16_t vcm_dac_reg_addr[VCM_NUMBER]={0x84,0x084,0x084,0xF01A,0x84,0x084,0x084,0x084,0x084}; //imx686,imx363,ov08a //ASUS_BSP for jason_yeh support multi camera vcm
 #else
@@ -31,7 +31,7 @@ uint8_t g_actuator_camera_open = 0;
 static uint8_t g_atd_status = 0;//fail
 
 
-#ifdef CONFIG_MACH_ASUS_ZS670KS
+#ifdef ASUS_DXO
 static uint16_t g_reg_addr = 0xF01A;
 static uint16_t g_slave_id = 0x24;
 #else
@@ -47,7 +47,7 @@ static enum camera_sensor_i2c_type g_data_type = CAMERA_SENSOR_I2C_TYPE_WORD; //
 static enum camera_sensor_i2c_type g_addr_type = CAMERA_SENSOR_I2C_TYPE_BYTE;
 
 static uint8_t g_operation = 0;//read
-#ifdef CONFIG_MACH_ASUS_ZS670KS
+#if defined(ASUS_DXO) ||defined(ZS670KS)
 extern uint8_t  eeprom_camera_specs; //ASUS_BSP jason add support ZF7 Entry ov08a
 #endif 
 void actuator_lock(void)
@@ -259,7 +259,7 @@ static ssize_t actuator_i2c_debug_write(struct file *filp, const char __user *bu
 
 	n = sscanf(messages,"%x %x %x %x",&val[0],&val[1],&val[2],&val[3]);
 //ASUS_BSP +++ jason add support ZF7 Entry ov08a
-#ifdef CONFIG_MACH_ASUS_ZS670KS
+#if defined(ASUS_DXO) ||defined(ZS670KS)
 	if(eeprom_camera_specs==0x71)
 		vcm_dac_reg_addr[3]=0x03;
 #endif	
@@ -489,7 +489,7 @@ static int actuator_read_vcm_dac_open(struct inode *inode, struct  file *file)
 	ret=kstrtol(temp, 10, &vcm_open_number) ;
 
 //ASUS_BSP +++ jason add support ZF7 Entry ov08a
-#ifdef CONFIG_MACH_ASUS_ZS670KS
+#if defined(ASUS_DXO) ||defined(ZS670KS)
       pr_info(" actuator_read_vcm_dac_open descriptor for file %s strlen=%d result=%d test=%d eeprom_camera_specs=%x\n",temp,strlen(temp),vcm_open_number,ret,eeprom_camera_specs);
 	if(eeprom_camera_specs==0x71)
 		vcm_dac_reg_addr[3]=0x03;
@@ -836,7 +836,7 @@ void asus_actuator_init(struct cam_actuator_ctrl_t * ctrl)
 //ASUS_BSP for jason_yeh +++ support multi camera vcm
 		actuator_ctrl= ctrl;
 		g_actuator_ctrl[ctrl->soc_info.index]= ctrl;
-#ifdef CONFIG_MACH_ASUS_ZS670KS
+#if defined(ASUS_DXO) ||defined(ZS670KS)		
 		pr_info("%s g_actuator_ctrl=%x index=%d eeprom_camera_specs %x\n",__func__,g_actuator_ctrl[ctrl->soc_info.index],ctrl->soc_info.index,eeprom_camera_specs);
 #else
 		pr_info("%s g_actuator_ctrl=%x index=%d \n",__func__,g_actuator_ctrl[ctrl->soc_info.index],ctrl->soc_info.index);
@@ -855,7 +855,7 @@ void asus_actuator_init(struct cam_actuator_ctrl_t * ctrl)
 
 int get_current_lens_position(uint32_t *dac_value,uint32_t index)
 {
-	#ifdef CONFIG_MACH_ASUS_ZS670KS
+	#if defined(ASUS_DXO) ||defined(ZS670KS)
 	if(index == 0) {
 		if(g_actuator_ctrl[CAMERA_0])
 		{
