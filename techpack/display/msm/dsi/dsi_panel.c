@@ -705,6 +705,11 @@ int asus_judge_aod_backlight(struct dsi_panel *panel,int bl_lvl)
 	return ret;
 }
 
+static bool bl_dimmer = true;
+module_param(bl_dimmer, bool, 0644);
+static int bl_min = 2;
+module_param(bl_min, int, 0644);
+
 int dsi_panel_update_backlight(struct dsi_panel *panel,
 	u32 bl_lvl)
 {
@@ -724,6 +729,19 @@ int dsi_panel_update_backlight(struct dsi_panel *panel,
 */
 
 	zs670ks_aod_bl_mode = asus_judge_aod_backlight(panel,bl_lvl);
+
+	if ((bl_dimmer == true) && (bl_lvl == 13))
+		{
+		bl_lvl = 10 ;
+		}
+	if ((bl_dimmer == true) && (bl_lvl == 9))
+		{
+		bl_lvl = 6;
+		}
+	if ((bl_dimmer == true) && (bl_lvl == 5))
+		{
+		bl_lvl = bl_min;
+		}
 
 	if(bl_lvl != 1)
 		rc = mipi_dsi_dcs_set_display_brightness(dsi, bl_lvl);
