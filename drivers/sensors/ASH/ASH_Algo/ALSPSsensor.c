@@ -180,8 +180,10 @@ struct lsensor_data
 	int dynamic_sensitive;			/* used in dynamic control machanism */
 	uint8_t dynamic_IT;					/* used in dynamic control machanism */
 	
-	struct timespec ts; 
+	struct timespec IT_change_ts; 
 	u64 evt_skip_time_ns;
+	struct timespec prox_ts; 
+	u64 prox_off_debounce_time_ns;
 	
 	int g_als_retry_count;                          /* polling workqueue retry to get adc count, set 0 when polling cancel */
 	
@@ -376,6 +378,8 @@ static void psensor_onoff_recovery(bool bOn){
 			if(g_ps_data->HAL_switch_on == true){
 				log("Close psensor temporary");
 				proximity_turn_onoff(bOn);
+			}else{
+				psensor_report_abs(-1);
 			}
 		}
 	}
@@ -502,6 +506,9 @@ static int proximity_turn_onoff(bool bOn)
 			if(g_ps_data->autok == true){
 				hrtimer_cancel(&g_alsps_timer);
 			}
+			
+			getnstimeofday(&g_als_data->prox_ts);
+			g_als_data->prox_off_debounce_time_ns = timespec_to_ns(&g_als_data->prox_ts) + ALSPS_hw_client->mlsensor_hw->light_hw_get_evt_skip_time_ns();
 		}		
 	}	
 	
@@ -771,7 +778,26 @@ static int light_lux_check_psensor_noise(int lux)
 {
 	int index = 0;
 	int lux_temp = 0;
-	if(g_ps_data->Device_switch_on == true || g_ps_data->HAL_switch_on == true){
+	struct timespec ts;
+	u64 l_current_time_ns;
+	getnstimeofday(&ts);
+	l_current_time_ns = timespec_to_ns(&ts);
+
+	/* ASUS BSP Clay: when offset_adc = 0, don't do offset behavior */
+	if(g_als_data->offset_adc == 0){
+		return lux;
+	}
+
+		if(g_als_data->g_als_log_first_event){
+			log("Light sensor current_t %llx, rest_t %llx, %llx", l_current_time_ns, 
+			g_als_data->prox_off_debounce_time_ns, ALSPS_hw_client->mlsensor_hw->light_hw_get_evt_skip_time_ns());
+			if(g_als_data->prox_off_debounce_time_ns > l_current_time_ns){
+				log("Psensor off debounce case!");
+			}
+		}
+
+	if(g_ps_data->Device_switch_on == true || g_ps_data->HAL_switch_on == true
+		|| g_als_data->prox_off_debounce_time_ns > l_current_time_ns){
 		if(lux <= g_als_data->offset_lux){
 			dbg("psensor on, lux < offset_lux(%d), return 0", lux,  g_als_data->offset_lux);
 			lux = 0;
@@ -1498,6 +1524,9 @@ static int mproximity_store_switch_onoff(bool bOn)
 		}			
 	}else{
 		log("Proximity is already %s", bOn?"ON":"OFF");
+		if(bOn == false){
+			psensor_report_abs(-1);
+		}
 	}
 	mutex_unlock(&g_alsps_lock);
 	
@@ -2181,7 +2210,7 @@ static int ALS_check_event_rest_time(int lux){
 		if(l_current_time_ns > g_als_data->evt_skip_time_ns){
 			log("Light sensor report Lux=%d,  current_t %llx, rest_t %llx", lux, l_current_time_ns, g_als_data->evt_skip_time_ns);
 			g_als_data->evt_skip_time_ns = 0;
-			g_als_data->ts.tv_nsec = 0;
+			g_als_data->IT_change_ts.tv_nsec = 0;
 			lsensor_report_lux(lux);
 			g_als_data->event_counter++;	/* --- For stress test debug --- */
 			return 1;
@@ -2220,8 +2249,8 @@ static int ALS_dynamic_ctl_check(int lux){
 		ALSPS_hw_client->mlsensor_hw->light_hw_set_integration(g_als_data->dynamic_IT);
 		
 		//assign rest time enable
-		getnstimeofday(&g_als_data->ts);
-		g_als_data->evt_skip_time_ns = timespec_to_ns(&g_als_data->ts) + ALSPS_hw_client->mlsensor_hw->light_hw_get_evt_skip_time_ns();
+		getnstimeofday(&g_als_data->IT_change_ts);
+		g_als_data->evt_skip_time_ns = timespec_to_ns(&g_als_data->IT_change_ts) + ALSPS_hw_client->mlsensor_hw->light_hw_get_evt_skip_time_ns();
 		return 1;
 	}else
 		return 0;
@@ -2688,8 +2717,8 @@ static int init_data(void)
 	g_als_data->dynamic_sensitive = ALSPS_hw_client->mlsensor_hw->light_hw_get_current_sensitive();
 	g_als_data->dynamic_IT = ALSPS_hw_client->mlsensor_hw->light_hw_get_current_IT();
 	g_als_data->selection = 0;
-	g_als_data->ts.tv_sec = 0;
-	g_als_data->ts.tv_nsec = 0;
+	g_als_data->IT_change_ts.tv_sec = 0;
+	g_als_data->IT_change_ts.tv_nsec = 0;
 	g_als_data->evt_skip_time_ns = 0;
 	/* ASUS BSP Clay: shift lux to mitigate psensor noise when psensor on and lux < offset +++ */
 	g_als_data->offset_adc = LIGHT_LOW_LUX_NOISE_OFFSET;

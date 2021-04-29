@@ -91,7 +91,7 @@ temp_show(struct device *dev, struct device_attribute *attr, char *buf)
 		return ret;
 
 #ifdef ZS670KS  
-	if(tz->id == 82){
+	if(tz->id == 89){
 		G_virtual_therm_temp_prev = G_virtual_therm_temp;
 		temperature = get_virtual_temp();
 		G_virtual_therm_temp = smooth_virtual_therm_temp(temperature);
