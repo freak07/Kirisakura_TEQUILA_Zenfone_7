@@ -176,7 +176,7 @@ enum haptics_custom_effect_param {
 
 #define REG_HAP_SEC_ACCESS		0xD0
 
-#define STRONG_MAGNITUDE                0x7fff
+#define STRONG_MAGNITUDE                0xB2C7
 
 struct qti_hap_effect {
 	int			id;
@@ -1030,6 +1030,11 @@ handled:
 	return IRQ_HANDLED;
 }
 
+static bool vib_dur = false;
+module_param(vib_dur, bool, 0644);
+static int vib_dur_div = 2;
+module_param(vib_dur_div, int, 0644);
+
 static inline void get_play_length(struct qti_hap_play_info *play,
 		int *length_us)
 {
@@ -1044,8 +1049,24 @@ static inline void get_play_length(struct qti_hap_play_info *play,
 	if (effect->brake_en)
 		tmp += effect->play_rate_us * effect->brake_pattern_length;
 
-	*length_us = tmp;
+	if (vib_dur == false) {
+		*length_us = tmp;
+		}
+
+	if (vib_dur == true)  {
+			*length_us = tmp / vib_dur_div;
+		}
+	//*length_us = tmp;
 }
+
+static bool vib_set_stat = false;
+module_param(vib_set_stat, bool, 0644);
+static bool vib_set_per = false;
+module_param(vib_set_per, bool, 0644);
+static int vib_mult_per = 1;
+module_param(vib_mult_per, int, 0644);
+static int vib_mult_stat = 1;
+module_param(vib_mult_stat, int, 0644);
 
 static int qti_haptics_upload_effect(struct input_dev *dev,
 		struct ff_effect *effect, struct ff_effect *old)
@@ -1070,13 +1091,21 @@ static int qti_haptics_upload_effect(struct input_dev *dev,
 	switch (effect->type) {
 	case FF_CONSTANT:
 		play->length_us = effect->replay.length * USEC_PER_MSEC;
+
+		if (vib_set_stat == false) {
 		level = effect->u.constant.level;
+		}
+
+		if (vib_set_stat == true)  {
+			level = (vib_mult_stat * (effect->u.constant.level/16));
+		}
+
 		tmp = level * config->vmax_mv;
-		play->vmax_mv = tmp / 0x7fff;
+		play->vmax_mv = tmp / 0xB2C7;
 		dev_dbg(chip->dev, "upload constant effect, length = %dus, vmax_mv=%d\n",
 				play->length_us, play->vmax_mv);
                 printk("[vibrator] %s - FF_CONSTANT : time = %d us, level=%d(%d%%), vmax_mv=%d\n",
-				__func__, play->length_us, level, level*100/0x7fff, play->vmax_mv);
+				__func__, play->length_us, level, level*100/0xB2C7, play->vmax_mv);
 		rc = qti_haptics_load_constant_waveform(chip);
 		if (rc < 0) {
 			dev_err(chip->dev, "Play constant waveform failed, rc=%d\n",
@@ -1109,14 +1138,21 @@ static int qti_haptics_upload_effect(struct input_dev *dev,
 			return -EINVAL;
 		}
 
+		if (vib_set_per == false) {
 		level = effect->u.periodic.magnitude;
+		}
+
+		if (vib_set_per == true)  {
+			level = (vib_mult_per * (effect->u.periodic.magnitude/16));
+		}
+
 		tmp = level * chip->predefined[i].vmax_mv;
-		play->vmax_mv = tmp / 0x7fff;
+		play->vmax_mv = tmp / 0xB2C7;
 
 		dev_dbg(chip->dev, "upload effect %d, vmax_mv=%d\n",
 				chip->predefined[i].id, play->vmax_mv);
 		printk("[vibrator] %s - FF_PERIODIC : effect=%d, level=%d(%d%%), vmax_mv=%d \n",
-				__func__, chip->predefined[i].id, level, level*100/0x7fff, play->vmax_mv);
+				__func__, chip->predefined[i].id, level, level*100/0xB2C7, play->vmax_mv);
 
 		rc = qti_haptics_load_predefined_effect(chip, i);
 		if (rc < 0) {
@@ -1263,10 +1299,10 @@ static void qti_haptics_set_gain(struct input_dev *dev, u16 gain)
 	if (gain == 0)
 		return;
 
-	if (gain > 0x7fff)
-		gain = 0x7fff;
+	if (gain > 0xB2C7)
+		gain = 0xB2C7;
 
-	play->vmax_mv = ((u32)(gain * config->vmax_mv)) / 0x7fff;
+	play->vmax_mv = ((u32)(gain * config->vmax_mv)) / 0xB2C7;
 	qti_haptics_config_vmax(chip, play->vmax_mv);
 }
 
