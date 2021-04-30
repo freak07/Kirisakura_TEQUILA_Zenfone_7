@@ -37,6 +37,8 @@
 		qcom,mdss-pan-physical-width-dimension = <70>;
 		qcom,mdss-pan-physical-height-dimension = <155>;
 
+		qcom,ulps-enabled;
+
 		qcom,dsi-supported-dfps-list = <90 60>;
 		qcom,mdss-dsi-pan-enable-dynamic-fps;
 		qcom,mdss-dsi-pan-fps-update =
