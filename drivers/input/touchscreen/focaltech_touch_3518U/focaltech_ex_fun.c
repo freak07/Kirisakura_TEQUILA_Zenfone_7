@@ -1175,6 +1175,9 @@ static ssize_t fts_touch_disable_store(
     return count;
 }
 
+static bool sampling_override = false;
+module_param(sampling_override, bool, 0644);
+
 static ssize_t fts_touch_report_rate_store(
     struct device *dev,
     struct device_attribute *attr, const char *buf, size_t count)
@@ -1182,10 +1185,15 @@ static ssize_t fts_touch_report_rate_store(
 	int tmp = 0;
 	tmp = buf[0] - 48;
 
-	if (tmp == 0)
+	if ((tmp == 0) && (sampling_override == false))
 	{
 		FTS_INFO("report rate 120HZ");
 		fts_write_reg(0x88, 12);	// 0x0C
+	}
+	else if ((tmp == 0) && (sampling_override == true))
+	{
+		FTS_INFO("report rate overriden 200HZ");
+		fts_write_reg(0x88, 18);	// 0x12
 	}
 	else if (tmp == 1)
 	{
