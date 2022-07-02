@@ -830,3 +830,54 @@ void destroy_votable(struct votable *votable)
 	kfree(votable->name);
 	kfree(votable);
 }
+
+//[+++]ASUS : For dumping voters and their value
+int asus_dump_voter(struct votable *votable)
+{
+	int i;
+
+#ifndef ZS670KS
+	pr_err("[BAT][CHG] %s: votable(%s)\n", __func__, votable->name);
+#endif
+	for (i = 0; i < votable->num_clients; i++) {
+		if (votable->client_strs[i]) {
+#ifdef ZS670KS
+		if(votable->votes[i].enabled)
+			pr_err("[BAT][CHG] %s : %s = %d\n", votable->name, votable->client_strs[i], votable->votes[i].value);
+#else
+			pr_err("client_strs[%d] = %s, enabled = %d, value = %d\n", i, votable->client_strs[i], votable->votes[i].enabled, votable->votes[i].value);
+#endif
+		}
+	}
+
+	return 0;
+}
+//[---]ASUS : For dumping voters and their value
+
+//[+++]ASUS : For setting ICL
+int asus_exclusive_vote(struct votable *votable, const char *client_str, bool enabled, int val)
+{
+	int i;
+	int rc = 0;
+
+	lock_votable(votable);
+	for (i = 0; i < votable->num_clients; i++) {
+		if (votable->client_strs[i]) {
+			if(strstr(votable->client_strs[i],"ASUS"))
+			{
+				pr_debug("ASUS voter,don't erase it+++\n");
+			}
+			else
+			{
+				votable->votes[i].enabled = false;
+				votable->votes[i].value = 0;
+			}
+		}
+	}
+	unlock_votable(votable);
+
+	rc = vote(votable, client_str, enabled, val);
+
+	return rc;
+}
+//[---]ASUS : For setting ICL

@@ -52,6 +52,31 @@ static char *drm_devnode(struct device *dev, umode_t *mode)
 
 static CLASS_ATTR_STRING(version, S_IRUGO, "drm 1.1.0 20060810");
 
+#ifdef ZS670KS
+static int g_hdr = 0;
+
+static ssize_t hdr_mode_show(struct class *class,
+					struct class_attribute *attr,
+					char *buf)
+{
+	return sprintf(buf, "%d\n", g_hdr);
+}
+
+static ssize_t hdr_mode_store(struct class *class,
+					struct class_attribute *attr,
+					const char *buf, size_t count)
+{
+	if (!count)
+		return -EINVAL;
+
+	sscanf(buf, "%d", &g_hdr);
+
+	return count;
+}
+static CLASS_ATTR_RW(hdr_mode);
+
+#endif
+
 /**
  * drm_sysfs_init - initialize sysfs helpers
  *
@@ -77,6 +102,16 @@ int drm_sysfs_init(void)
 		return err;
 	}
 
+#ifdef ZS670KS
+		err = class_create_file(drm_class, &class_attr_hdr_mode);
+		if (err) {
+			printk("[Display] Fail to create hdr_mode file node\n");
+			class_destroy(drm_class);
+			drm_class = NULL;
+			return err;
+		}
+#endif
+
 	drm_class->devnode = drm_devnode;
 	return 0;
 }
@@ -91,6 +126,11 @@ void drm_sysfs_destroy(void)
 	if (IS_ERR_OR_NULL(drm_class))
 		return;
 	class_remove_file(drm_class, &class_attr_version.attr);
+
+#ifdef ZS670KS
+	class_remove_file(drm_class, &class_attr_hdr_mode);
+#endif
+
 	class_destroy(drm_class);
 	drm_class = NULL;
 }

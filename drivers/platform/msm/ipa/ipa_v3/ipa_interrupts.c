@@ -1,20 +1,31 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2018,2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/interrupt.h>
 #include "ipa_i.h"
 
+#include <asm/arch_timer.h>
+#include <linux/sched/clock.h>
+#include <linux/jiffies.h>
+#include <linux/sched.h>
+#include <linux/wait.h>
+#include <linux/delay.h>
+
 #define INTERRUPT_WORKQUEUE_NAME "ipa_interrupt_wq"
 #define DIS_SUSPEND_INTERRUPT_TIMEOUT 5
 #define IPA_IRQ_NUM_MAX 32
+#define IPA_IRQ_CACHE_MAX 20
 
 struct ipa3_interrupt_info {
 	ipa_irq_handler_t handler;
 	enum ipa_irq_type interrupt;
 	void *private_data;
 	bool deferred_flag;
+	u64 qtimer[IPA_IRQ_CACHE_MAX];
+	u64 timestamp[IPA_IRQ_CACHE_MAX];
+	int cache_index;
 };
 
 struct ipa3_interrupt_work_wrap {
@@ -261,6 +272,7 @@ static void ipa3_process_interrupts(bool isr_context)
 	u32 en;
 	unsigned long flags;
 	bool uc_irq;
+	u32 id;
 
 	IPADBG_LOW("Enter isr_context=%d\n", isr_context);
 
@@ -275,7 +287,16 @@ static void ipa3_process_interrupts(bool isr_context)
 			if (en & reg & bmsk) {
 				IPADBG_LOW("Irq number %d asserted\n", i);
 				uc_irq = is_uc_irq(i);
-
+				/*
+				 * Cache timestamp for last interrupt
+				 */
+				id = ipa_interrupt_to_cb[i].cache_index;
+				ipa_interrupt_to_cb[i].qtimer[id] =
+					arch_counter_get_cntvct();
+				ipa_interrupt_to_cb[i].timestamp[id] =
+					sched_clock();
+				ipa_interrupt_to_cb[i].cache_index =
+					(id + 1) % IPA_IRQ_CACHE_MAX;
 				/*
 				 * Clear uC interrupt before processing to avoid
 				 * clearing unhandled interrupts
@@ -489,6 +510,11 @@ int ipa3_interrupts_init(u32 ipa_irq, u32 ee, struct device *ipa_dev)
 		ipa_interrupt_to_cb[idx].handler = NULL;
 		ipa_interrupt_to_cb[idx].private_data = NULL;
 		ipa_interrupt_to_cb[idx].interrupt = -1;
+		memset(ipa_interrupt_to_cb[idx].qtimer,
+			0, sizeof(ipa_interrupt_to_cb[idx].qtimer));
+		memset(ipa_interrupt_to_cb[idx].timestamp,
+			0, sizeof(ipa_interrupt_to_cb[idx].timestamp));
+		ipa_interrupt_to_cb[idx].cache_index = 0;
 	}
 
 	ipa_interrupt_wq = create_singlethread_workqueue(

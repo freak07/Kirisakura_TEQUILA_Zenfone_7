@@ -377,6 +377,21 @@ struct drm_bridge *of_drm_find_bridge(struct device_node *np)
 EXPORT_SYMBOL(of_drm_find_bridge);
 #endif
 
+#ifdef ZS670KS
+void drm_bridge_asus_dfps(struct drm_bridge *bridge)
+{
+	if (!bridge)
+		return;
+
+	if (bridge->funcs->asus_dfps)
+		bridge->funcs->asus_dfps(bridge);
+
+	drm_bridge_asus_dfps(bridge->next);
+
+}
+EXPORT_SYMBOL(drm_bridge_asus_dfps);
+#endif
+
 MODULE_AUTHOR("Ajay Kumar <ajaykumar.rs@samsung.com>");
 MODULE_DESCRIPTION("DRM bridge infrastructure");
 MODULE_LICENSE("GPL and additional rights");

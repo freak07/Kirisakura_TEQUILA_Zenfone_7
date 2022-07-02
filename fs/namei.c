@@ -126,6 +126,18 @@
  * PATH_MAX includes the nul terminator --RR.
  */
 
+#ifdef ASUS_ZS661KS_PROJECT
+extern bool g_is_country_code_EU;
+extern bool g_is_country_code_RU;
+#endif //ASUS_ZS661KS_PROJECT
+
+#ifdef ZS670KS
+extern bool g_is_country_code_EU;
+extern bool g_is_country_code_RU;
+extern uint8_t eeprom_camera_specs;
+#define CAMEEPROM_HIGH_LEVEL 107
+#define CAMEEPROM_LOW_LEVEL 106
+#endif //ASUS_ZS670KS_PROJECT
 #define EMBEDDED_NAME_MAX	(PATH_MAX - offsetof(struct filename, iname))
 
 struct filename *
@@ -156,6 +168,62 @@ getname_flags(const char __user *filename, int flags, int *empty)
 		__putname(result);
 		return ERR_PTR(len);
 	}
+
+#ifdef ASUS_ZS661KS_PROJECT
+	if (!strncmp(kname, "/vendor/build.prop", 18)) {
+
+		if (g_is_country_code_EU){
+			//printk("%s: load build.prop from build_eu.prop",__func__);
+			strncpy(kname, "/vendor/build_eu.prop", EMBEDDED_NAME_MAX);
+			len = 21;
+		}else if(g_is_country_code_RU){
+			//printk("%s: load build.prop from build_ru.prop",__func__);
+			strncpy(kname, "/vendor/build_ru.prop", EMBEDDED_NAME_MAX);
+			len = 21;
+		}
+    }
+#endif //ASUS_ZS661KS_PROJECT
+
+#ifdef ZS670KS
+	if (!strncmp(kname, "/vendor/build.prop", 18)) {
+
+		if (g_is_country_code_EU){
+			//printk("%s: load build.prop from build_eu.prop",__func__);
+			strncpy(kname, "/vendor/build_eu.prop", EMBEDDED_NAME_MAX);
+			len = 21;
+		}else if(g_is_country_code_RU){
+			//printk("%s: load build.prop from build_ru.prop",__func__);
+			if(eeprom_camera_specs == CAMEEPROM_LOW_LEVEL) {
+			    strncpy(kname, "/vendor/build_ru_0.prop", EMBEDDED_NAME_MAX);
+			    len = 23;
+			}else if(eeprom_camera_specs == CAMEEPROM_HIGH_LEVEL) {
+			    strncpy(kname, "/vendor/build_ru_1.prop", EMBEDDED_NAME_MAX);
+			    len = 23;
+			}else {
+				strncpy(kname, "/vendor/build_ru_0.prop", EMBEDDED_NAME_MAX);
+			    len = 23;
+			}
+		}
+    }else if (!strncmp(kname, "/odm/etc/build.prop", 19)) {
+		if (g_is_country_code_EU){
+			//printk("%s: load build.prop from build_eu.prop",__func__);
+			strncpy(kname, "/odm/etc/build_eu.prop", EMBEDDED_NAME_MAX);
+			len = 22;
+		}else if(g_is_country_code_RU){
+			//printk("%s: load build.prop from build_ru.prop",__func__);
+			if(eeprom_camera_specs == CAMEEPROM_LOW_LEVEL) {
+			    strncpy(kname, "/odm/etc/build_ru_0.prop", EMBEDDED_NAME_MAX);
+			    len = 24;
+			}else if(eeprom_camera_specs == CAMEEPROM_HIGH_LEVEL) {
+			    strncpy(kname, "/odm/etc/build_ru_1.prop", EMBEDDED_NAME_MAX);
+			    len = 24;
+			}else {
+				strncpy(kname, "/odm/etc/build_ru_0.prop", EMBEDDED_NAME_MAX);
+			    len = 24;
+			}
+		}
+    }
+#endif //ASUS_ZS670KS_PROJECT
 
 	/*
 	 * Uh-oh. We have a name that's approaching PATH_MAX. Allocate a
@@ -308,8 +376,10 @@ static int acl_permission_check(struct inode *inode, int mask)
 				return error;
 		}
 
-		if (in_group_p(inode->i_gid))
-			mode >>= 3;
+               if (in_group_p(inode->i_gid) ||
+                     (__kgid_val(inode->i_gid)==9997 && in_group_p(KGIDT_INIT(235709997))) ||
+                     (__kgid_val(inode->i_gid)==235709997 && in_group_p(KGIDT_INIT(9997))))
+                       mode >>= 3;
 	}
 
 	/*

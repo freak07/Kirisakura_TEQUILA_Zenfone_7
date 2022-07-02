@@ -1295,7 +1295,9 @@ static int configfs_composite_bind(struct usb_gadget *gadget,
 	int				ret;
 
 	/* the gi->lock is hold by the caller */
+	pr_info("[USB][CONFIGFS] %s +++\n", __func__);
 	gi->unbind = 0;
+
 	cdev->gadget = gadget;
 	set_gadget_data(gadget, cdev);
 	ret = composite_dev_prepare(composite, cdev);
@@ -1405,6 +1407,7 @@ static int configfs_composite_bind(struct usb_gadget *gadget,
 				list_add(&f->list, &cfg->func_list);
 				goto err_purge_funcs;
 			}
+			pr_info("[USB][CONFIGFS] Binding function: %s\n", f->name);
 		}
 		usb_ep_autoconfig_reset(cdev->gadget);
 	}
@@ -1613,8 +1616,7 @@ static int android_setup(struct usb_gadget *gadget,
 	}
 	spin_unlock_irqrestore(&cdev->lock, flags);
 	list_for_each_entry(fi, &gi->available_func, cfs_list) {
-		if (fi != NULL && fi->f != NULL && fi->f->setup != NULL
-		    && fi->f->config != NULL) {
+		if (fi != NULL && fi->f != NULL && fi->f->setup != NULL) {
 			value = fi->f->setup(fi->f, c);
 			if (value >= 0)
 				break;

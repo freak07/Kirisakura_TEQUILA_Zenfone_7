@@ -419,7 +419,6 @@ struct ufs_hba_crypto_variant_ops {
 	int (*prepare_lrbp_crypto)(struct ufs_hba *hba,
 				   struct scsi_cmnd *cmd,
 				   struct ufshcd_lrb *lrbp);
-	int (*map_sg_crypto)(struct ufs_hba *hba, struct ufshcd_lrb *lrbp);
 	int (*complete_lrbp_crypto)(struct ufs_hba *hba,
 				    struct scsi_cmnd *cmd,
 				    struct ufshcd_lrb *lrbp);
@@ -573,6 +572,14 @@ struct debugfs_files {
 	struct dentry *show_hba;
 	struct dentry *host_regs;
 	struct dentry *dump_dev_desc;
+//ASUS_BSP Deeo : dump all desc +++
+	struct dentry *dump_geometry_desc;
+	struct dentry *dump_unit_desc;
+	struct dentry *dump_attr;
+	struct dentry *dump_flag;
+	struct dentry *dump_health_desc;
+	struct dentry *dump_string_desc;
+//ASUS_BSP Deeo : dump all desc ---
 	struct dentry *power_mode;
 	struct dentry *dme_local_read;
 	struct dentry *dme_peer_read;
@@ -830,6 +837,21 @@ struct ufs_hba {
 	int spm_lvl;
 	struct device_attribute rpm_lvl_attr;
 	struct device_attribute spm_lvl_attr;
+	//ASUS_BSP Deeo : Get UFS info +++
+	struct device_attribute ufs_total_size_attr;
+	struct device_attribute ufs_size_attr;
+	struct device_attribute ufs_preEOL_attr;
+	struct device_attribute ufs_health_A_attr;
+	struct device_attribute ufs_health_B_attr;
+	struct device_attribute ufs_status_attr;
+	struct device_attribute ufs_productID_attr;
+	struct device_attribute ufs_fw_version_attr;
+	struct device_attribute ufs_wb_enabled_attr;
+	u64 ufs_size;
+	char ufs_total_size[10];
+	char ufs_status[32];
+	//ASUS_BSP Deeo : Get UFS info ---
+
 	int pm_op_in_progress;
 
 	/* Auto-Hibernate Idle Timer register value */
@@ -1333,6 +1355,14 @@ out:
 }
 
 int ufshcd_read_device_desc(struct ufs_hba *hba, u8 *buf, u32 size);
+//ASUS_BSP Deeo : dump all desc +++
+int ufshcd_read_geometry_desc(struct ufs_hba *hba, u8 *buf, u32 size);
+int ufshcd_read_unit_desc(struct ufs_hba *hba, int desc_index, u8 *buf, u32 size);
+int ufshcd_read_health_desc(struct ufs_hba *hba, u8 *buf, u32 size);
+int ufshcd_read_string_desc(struct ufs_hba *hba, int desc_index, u8 *buf, u32 size, bool ascii);
+//ASUS_BSP Deeo : dump all desc ---
+
+#define ASCII_STD true
 
 static inline bool ufshcd_is_hs_mode(struct ufs_pa_layer_attr *pwr_info)
 {

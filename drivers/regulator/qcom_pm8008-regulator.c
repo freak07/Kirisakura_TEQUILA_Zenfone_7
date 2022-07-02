@@ -454,6 +454,7 @@ static int pm8008_regulator_set_mode(struct regulator_dev *rdev,
 	else if (mode == REGULATOR_MODE_IDLE)
 		val = LDO_MODE_LPM;
 
+    val = LDO_MODE_NPM; //workaround set LDO_MODE_NPM of pm8008 regulator (L1~L7)
 	rc = pm8008_masked_write(pm8008_reg->regmap,
 				LDO_MODE_CTL1_REG(pm8008_reg->base),
 				MODE_PRIMARY_MASK, val);

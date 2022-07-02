@@ -1422,16 +1422,14 @@ static void __queue_work(int cpu, struct workqueue_struct *wq,
 	    WARN_ON_ONCE(!is_chained_work(wq)))
 		return;
 retry:
+	if (req_cpu == WORK_CPU_UNBOUND)
+		cpu = wq_select_unbound_cpu(raw_smp_processor_id());
+
 	/* pwq which will be used unless @work is executing elsewhere */
-	if (wq->flags & WQ_UNBOUND) {
-		if (req_cpu == WORK_CPU_UNBOUND)
-			cpu = wq_select_unbound_cpu(raw_smp_processor_id());
-		pwq = unbound_pwq_by_node(wq, cpu_to_node(cpu));
-	} else {
-		if (req_cpu == WORK_CPU_UNBOUND)
-			cpu = raw_smp_processor_id();
+	if (!(wq->flags & WQ_UNBOUND))
 		pwq = per_cpu_ptr(wq->cpu_pwqs, cpu);
-	}
+	else
+		pwq = unbound_pwq_by_node(wq, cpu_to_node(cpu));
 
 	/*
 	 * If @work was previously on a different pool, it might still be
@@ -2085,6 +2083,7 @@ static bool manage_workers(struct worker *worker)
  * CONTEXT:
  * spin_lock_irq(pool->lock) which is released and regrabbed.
  */
+static char work_comm[16];
 static void process_one_work(struct worker *worker, struct work_struct *work)
 __releases(&pool->lock)
 __acquires(&pool->lock)
@@ -2135,6 +2134,12 @@ __acquires(&pool->lock)
 	 * overridden through set_worker_desc().
 	 */
 	strscpy(worker->desc, pwq->wq->name, WORKER_DESC_LEN);
+
+	/* ASUS BSP +++ */
+	memset(work_comm, 0, sizeof(work_comm));
+	snprintf(work_comm, 15, "wk:%pf", work->func);
+	strncpy(current->comm, work_comm, 15);
+	/* ASUS BSP --- */
 
 	list_del_init(&work->entry);
 

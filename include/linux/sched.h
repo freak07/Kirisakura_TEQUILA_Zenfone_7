@@ -130,7 +130,6 @@ enum fps {
 	FPS60 = 60,
 	FPS90 = 90,
 	FPS120 = 120,
-	FPS144 = 144,
 };
 
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
@@ -558,6 +557,9 @@ struct sched_entity {
 	 */
 	struct sched_avg		avg;
 #endif
+
+	int binder_sender_pid;
+	int binder_sender_tid;
 };
 
 struct sched_load {
@@ -879,7 +881,6 @@ struct task_struct {
 	bool misfit;
 	u32 unfilter;
 	bool low_latency;
-	bool rtg_high_prio;
 #endif
 
 #ifdef CONFIG_CGROUP_SCHED

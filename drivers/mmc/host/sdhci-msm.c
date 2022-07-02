@@ -1304,7 +1304,7 @@ static ssize_t store_mask_and_match(struct device *dev,
 	unsigned long value;
 	char *token;
 	int i = 0;
-	u32 mask = 0, match = 0, bit_shift = 0, testbus = 0;
+	u32 mask, match, bit_shift, testbus;
 
 	char *temp = (char *)buf;
 
@@ -2857,9 +2857,24 @@ static int sdhci_msm_setup_vreg(struct sdhci_msm_pltfm_data *pdata,
 		goto out;
 	}
 
+#ifdef ZS670KS
+	//ASUS_SZ_BSP  bevis: for zf7 sdcard power-off sequence +++
+	if(!strncmp(mmc_hostname(pdata->mmc),"mmc0",strlen("mmc0")) && !enable)
+	{
+		vreg_table[2] = curr_slot->vdd_data;
+		vreg_table[1] = curr_slot->vdd_io_data;
+		vreg_table[0] = curr_slot->vdd_io_bias_data;
+	}else{
+		vreg_table[0] = curr_slot->vdd_data;
+		vreg_table[1] = curr_slot->vdd_io_data;
+		vreg_table[2] = curr_slot->vdd_io_bias_data;
+	}
+	//ASUS_SZ_BSP  bevis: for zf7 sdcard power-off sequence ---
+#else
 	vreg_table[0] = curr_slot->vdd_data;
 	vreg_table[1] = curr_slot->vdd_io_data;
 	vreg_table[2] = curr_slot->vdd_io_bias_data;
+#endif
 
 	for (i = 0; i < ARRAY_SIZE(vreg_table); i++) {
 		if (vreg_table[i]) {
@@ -3102,6 +3117,7 @@ static irqreturn_t sdhci_msm_pwr_irq(int irq, void *data)
 	struct sdhci_msm_host *msm_host = pltfm_host->priv;
 	const struct sdhci_msm_offset *msm_host_offset =
 					msm_host->offset;
+
 	u8 irq_status = 0;
 	u8 irq_ack = 0;
 	int ret = 0;
@@ -5353,6 +5369,12 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "No device tree node\n");
 		goto pltfm_free;
 	}
+
+	//ASUS_SZ_BSP  bevis: for zf7 sdcard power-off sequence +++
+	#ifdef ZS670KS
+		msm_host->pdata->mmc = host->mmc;
+	#endif
+	//ASUS_SZ_BSP  bevis: for zf7 sdcard power-off sequence ---
 
 	/* Setup Clocks */
 

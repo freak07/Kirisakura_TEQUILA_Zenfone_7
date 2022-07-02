@@ -63,6 +63,11 @@ obj-$(CONFIG_IOMMU_SUPPORT)	+= iommu/
 # gpu/ comes after char for AGP vs DRM startup and after iommu
 obj-y				+= gpu/
 
+#Zen7 camera moto driver.
+ifeq ($(ASUS_BUILD_PROJECT),ZS670KS)
+obj-y				+= msp/
+endif
+
 obj-$(CONFIG_CONNECTOR)		+= connector/
 
 # i810fb and intelfb depend on char/agp/

@@ -16,6 +16,7 @@
 #include <linux/wait.h>
 #include <linux/mhi.h>
 #include "mhi_internal.h"
+#include <soc/qcom/subsystem_restart.h>
 
 static void mhi_process_sfr(struct mhi_controller *mhi_cntrl,
 	struct file_info *info)
@@ -59,6 +60,7 @@ static void mhi_process_sfr(struct mhi_controller *mhi_cntrl,
 
 	/* force sfr string to log in kernel msg */
 	MHI_ERR("%s\n", sfr_buf);
+	subsys_save_reason("wlan", sfr_buf );
 err:
 	kfree(sfr_buf);
 }
@@ -666,8 +668,6 @@ fw_load_ee_pthru:
 
 	if (!ret || MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state)) {
 		MHI_CNTRL_ERR("MHI did not enter BHIE\n");
-		mhi_cntrl->status_cb(mhi_cntrl, mhi_cntrl->priv_data,
-				     MHI_CB_BOOTUP_TIMEOUT);
 		goto error_read;
 	}
 
@@ -676,11 +676,6 @@ fw_load_ee_pthru:
 	ret = mhi_fw_load_amss(mhi_cntrl,
 			       /* last entry is vec table */
 			       &image_info->mhi_buf[image_info->entries - 1]);
-
-	if (ret) {
-		mhi_cntrl->status_cb(mhi_cntrl, mhi_cntrl->priv_data,
-				     MHI_CB_BOOTUP_TIMEOUT);
-	}
 
 	MHI_CNTRL_LOG("amss fw_load ret:%d\n", ret);
 
