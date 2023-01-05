@@ -713,9 +713,9 @@ ifeq ($(call shell-cached,$(CONFIG_SHELL) $(srctree)/scripts/gcc-goto.sh $(CC) $
 endif
 
 ifneq ($(ASUS_BUILD_NUMBER),)
-	KBUILD_CPPFLAGS += -DASUS_SW_VER=\"$(TARGET_SKU)-$(ASUS_BUILD_NUMBER)\"
+	KBUILD_CPPFLAGS += -DASUS_SW_VER_CHIP=\"$(TARGET_SKU)-$(ASUS_BUILD_NUMBER)\"
 else
-	KBUILD_CPPFLAGS += -DASUS_SW_VER=\"$(TARGET_SKU)-$(ASUS_BUILD_PROJECT)_ENG\"
+	KBUILD_CPPFLAGS += -DASUS_SW_VER_CHIP=\"$(TARGET_SKU)-$(ASUS_BUILD_PROJECT)_ENG\"
 endif
 
 include scripts/Makefile.kcov
