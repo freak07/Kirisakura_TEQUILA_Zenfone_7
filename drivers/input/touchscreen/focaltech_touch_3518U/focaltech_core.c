@@ -1682,9 +1682,9 @@ static void focal_resume_work(struct work_struct *work)
 
     if ((fts_data->gesture_mode_enable == 1) || (fts_data->dclick_mode == 1) || (fts_data->swipeup_mode == 1) || (fts_data->aod_enable == 1)) {
             fts_gesture_resume(ts_data);
-    } else {
-        fts_irq_enable();
     }
+
+    fts_irq_enable();
 
     mutex_unlock(&fts_data->suspend_mutex);
     ts_data->suspended = false;
